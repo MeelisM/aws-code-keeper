@@ -27,7 +27,7 @@ const config = {
     },
   },
   rabbitmq: {
-    localUrl: process.env.RABBITMQ_LOCAL_URL,
+    localUrl: process.env.RABBITMQ_API_URL,
     queue: process.env.RABBITMQ_QUEUE,
   },
 };

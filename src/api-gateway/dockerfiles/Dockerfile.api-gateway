@@ -13,8 +13,8 @@ COPY . .
 
 # Add healthcheck for the application
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD wget -qO- http://localhost:8080/health
+    CMD wget -qO- http://localhost:3000/health || exit 1
 
-EXPOSE 8080
+EXPOSE 3000
 
-CMD ["sh", "-c", "npm run db:migrate && npm start"]
+CMD ["node", "server.js"]

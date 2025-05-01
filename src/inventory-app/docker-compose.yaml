@@ -13,10 +13,8 @@ services:
     container_name: inventory-db
     volumes:
       - inventory-db-volume:/var/lib/postgresql/data
-    ports:
-      - "${DB_PORT}:5432"
     networks:
-      - inventory-network
+      - app-network
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "postgres", "-d", "postgres"]
       interval: 10s
@@ -36,16 +34,15 @@ services:
       PORT: ${PORT}
       HOST: ${HOST}
     container_name: inventory-app
-    ports:
-      - "${PORT}:8080"
     depends_on:
       inventory-db:
         condition: service_healthy
     networks:
-      - inventory-network
+      - app-network
 
 networks:
-  inventory-network:
+  app-network:
+    name: app-network
     driver: bridge
 
 volumes:

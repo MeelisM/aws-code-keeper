@@ -75,11 +75,11 @@ spec:
                 secretKeyRef:
                   name: orchestrator-secrets
                   key: RABBITMQ_PASSWORD
-            - name: RABBITMQ_LOCAL_URL
+            - name: RABBITMQ_API_URL
               valueFrom:
                 secretKeyRef:
                   name: orchestrator-secrets
-                  key: RABBITMQ_LOCAL_URL
+                  key: RABBITMQ_API_URL
             - name: RABBITMQ_QUEUE
               valueFrom:
                 secretKeyRef:

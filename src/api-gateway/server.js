@@ -14,6 +14,10 @@ const __dirname = dirname(__filename);
 
 const app = express();
 
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "OK", message: "API Gateway is healthy" });
+});
+
 const openApiDocument = yaml.load(
   readFileSync(join(__dirname, "openapi.yaml"), "utf8")
 );

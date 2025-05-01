@@ -13,10 +13,8 @@ services:
     container_name: billing-db
     volumes:
       - billing-db-volume:/var/lib/postgresql/data
-    ports:
-      - "${DB_PORT:-5432}:5432"
     networks:
-      - billing-network
+      - app-network
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "postgres", "-d", "postgres"]
       interval: 10s
@@ -36,16 +34,15 @@ services:
       PORT: ${PORT}
       HOST: ${HOST}
     container_name: billing-app
-    ports:
-      - "${PORT:-8081}:8081"
     depends_on:
       billing-db:
         condition: service_healthy
     networks:
-      - billing-network
+      - app-network
 
 networks:
-  billing-network:
+  app-network:
+    name: app-network
     driver: bridge
 
 volumes:

@@ -9,14 +9,20 @@ dotenv.config({ path: join(__dirname, "/../.env") });
 
 const config = {
   server: {
-    port: process.env.GATEWAY_PORT,
+    port: process.env.PORT,
+    host: process.env.HOST,
     inventoryUrl: process.env.INVENTORY_URL,
-    host: process.env.GATEWAY_HOST,
   },
   rabbitmq: {
     apiUrl: process.env.RABBITMQ_API_URL,
     queue: process.env.RABBITMQ_QUEUE,
   },
 };
+
+console.log("API Gateway configuration:", {
+  port: config.server.port,
+  host: config.server.host,
+  inventoryUrl: config.server.inventoryUrl,
+});
 
 export default config;

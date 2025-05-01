@@ -1,0 +1,48 @@
+services:
+  api-gateway:
+    build:
+      context: .
+      dockerfile: ./dockerfiles/Dockerfile.api-gateway
+    environment:
+      PORT: ${PORT}
+      HOST: ${HOST}
+      INVENTORY_URL: ${INVENTORY_URL}
+      RABBITMQ_API_URL: ${RABBITMQ_API_URL}
+      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE}
+    container_name: api-gateway
+    volumes:
+      - api-gateway-logs:/var/logs/api-gateway
+    ports:
+      - "${PORT}:3000"
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  billing-queue:
+    build:
+      context: .
+      dockerfile: ./dockerfiles/Dockerfile.billing-queue
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    container_name: billing-queue
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  app-network:
+    name: app-network
+    driver: bridge
+
+volumes:
+  api-gateway-logs:
+    driver: local
