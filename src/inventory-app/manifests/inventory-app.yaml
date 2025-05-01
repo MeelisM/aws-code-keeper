@@ -35,31 +35,31 @@ spec:
           ports:
             - containerPort: 8080
           env:
-            - name: INVENTORY_DB_HOST
+            - name: DB_HOST
               valueFrom:
                 secretKeyRef:
                   name: inventory-secrets
-                  key: INVENTORY_DB_HOST
-            - name: INVENTORY_DB_PORT
+                  key: DB_HOST
+            - name: DB_PORT
               valueFrom:
                 secretKeyRef:
                   name: inventory-secrets
-                  key: INVENTORY_DB_PORT
-            - name: INVENTORY_DB_NAME
+                  key: DB_PORT
+            - name: DB_NAME
               valueFrom:
                 secretKeyRef:
                   name: inventory-secrets
-                  key: INVENTORY_DB_NAME
-            - name: INVENTORY_DB_USER
+                  key: DB_NAME
+            - name: DB_USER
               valueFrom:
                 secretKeyRef:
                   name: inventory-secrets
-                  key: INVENTORY_DB_USER
-            - name: INVENTORY_DB_PASSWORD
+                  key: DB_USER
+            - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: inventory-secrets
-                  key: INVENTORY_DB_PASSWORD
+                  key: DB_PASSWORD
           resources:
             requests:
               cpu: "100m"

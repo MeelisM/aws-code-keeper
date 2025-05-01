@@ -30,36 +30,36 @@ spec:
           ports:
             - containerPort: 8080
           env:
-            - name: BILLING_DB_HOST
+            - name: DB_HOST
               valueFrom:
                 secretKeyRef:
                   name: billing-secrets
-                  key: BILLING_DB_HOST
-            - name: BILLING_DB_PORT
+                  key: DB_HOST
+            - name: DB_PORT
               valueFrom:
                 secretKeyRef:
                   name: billing-secrets
-                  key: BILLING_DB_PORT
-            - name: BILLING_DB_NAME
+                  key: DB_PORT
+            - name: DB_NAME
               valueFrom:
                 secretKeyRef:
                   name: billing-secrets
-                  key: BILLING_DB_NAME
-            - name: BILLING_DB_USER
+                  key: DB_NAME
+            - name: DB_USER
               valueFrom:
                 secretKeyRef:
                   name: billing-secrets
-                  key: BILLING_DB_USER
-            - name: BILLING_DB_PASSWORD
+                  key: DB_USER
+            - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: billing-secrets
-                  key: BILLING_DB_PASSWORD
-            - name: RABBITMQ_HOST
+                  key: DB_PASSWORD
+            - name: RABBITMQ_API_URL
               valueFrom:
                 secretKeyRef:
                   name: billing-secrets
-                  key: RABBITMQ_HOST
+                  key: RABBITMQ_API_URL
             - name: RABBITMQ_PORT
               valueFrom:
                 secretKeyRef:

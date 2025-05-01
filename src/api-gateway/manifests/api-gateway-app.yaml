@@ -35,16 +35,16 @@ spec:
           ports:
             - containerPort: 3000
           env:
-            - name: GATEWAY_HOST
+            - name: HOST
               valueFrom:
                 secretKeyRef:
                   name: api-gateway-secrets
-                  key: GATEWAY_HOST
-            - name: GATEWAY_PORT
+                  key: HOST
+            - name: PORT
               valueFrom:
                 secretKeyRef:
                   name: api-gateway-secrets
-                  key: GATEWAY_PORT
+                  key: PORT
             - name: INVENTORY_URL
               valueFrom:
                 secretKeyRef:

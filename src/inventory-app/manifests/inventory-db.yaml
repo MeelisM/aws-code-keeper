@@ -27,25 +27,25 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: inventory-secrets
-                  key: INVENTORY_POSTGRES_PASSWORD
+                  key: POSTGRES_PASSWORD
             - name: POSTGRES_DB
               value: "postgres"
             # Original variables for app compatibility
-            - name: INVENTORY_DB_USER
+            - name: DB_USER
               valueFrom:
                 secretKeyRef:
                   name: inventory-secrets
-                  key: INVENTORY_DB_USER
-            - name: INVENTORY_DB_NAME
+                  key: DB_USER
+            - name: DB_NAME
               valueFrom:
                 secretKeyRef:
                   name: inventory-secrets
-                  key: INVENTORY_DB_NAME
-            - name: INVENTORY_DB_PASSWORD
+                  key: DB_NAME
+            - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: inventory-secrets
-                  key: INVENTORY_DB_PASSWORD
+                  key: DB_PASSWORD
           volumeMounts:
             - name: inventory-db-data
               mountPath: /var/lib/postgresql/data

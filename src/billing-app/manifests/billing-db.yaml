@@ -22,30 +22,33 @@ spec:
           env:
             # PostgreSQL admin credentials
             - name: POSTGRES_USER
-              value: "postgres"
+              valueFrom:
+                secretKeyRef:
+                  name: billing-secrets
+                  key: POSTGRES_USER
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: billing-secrets
-                  key: BILLING_POSTGRES_PASSWORD
+                  key: POSTGRES_PASSWORD
             - name: POSTGRES_DB
               value: "postgres"
             # Original variables for app compatibility
-            - name: BILLING_DB_USER
+            - name: DB_USER
               valueFrom:
                 secretKeyRef:
                   name: billing-secrets
-                  key: BILLING_DB_USER
-            - name: BILLING_DB_NAME
+                  key: DB_USER
+            - name: DB_NAME
               valueFrom:
                 secretKeyRef:
                   name: billing-secrets
-                  key: BILLING_DB_NAME
-            - name: BILLING_DB_PASSWORD
+                  key: DB_NAME
+            - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: billing-secrets
-                  key: BILLING_DB_PASSWORD
+                  key: DB_PASSWORD
           volumeMounts:
             - name: billing-db-data
               mountPath: /var/lib/postgresql/data
