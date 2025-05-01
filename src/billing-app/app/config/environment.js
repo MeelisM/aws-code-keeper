@@ -9,15 +9,15 @@ dotenv.config({ path: join(__dirname, "/../../.env") });
 
 const config = {
   server: {
-    port: process.env.BILLING_PORT,
-    host: process.env.BILLING_HOST,
+    port: process.env.PORT,
+    host: process.env.HOST,
   },
   database: {
-    username: process.env.BILLING_DB_USER,
-    password: process.env.BILLING_DB_PASSWORD,
-    database: process.env.BILLING_DB_NAME,
-    host: process.env.BILLING_DB_HOST,
-    port: process.env.BILLING_DB_PORT,
+    username: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+    host: process.env.DB_HOST,
+    port: process.env.DB_PORT,
     dialect: "postgres",
     pool: {
       max: 5,
@@ -31,4 +31,6 @@ const config = {
     queue: process.env.RABBITMQ_QUEUE,
   },
 };
+
+console.log(config.database);
 export default config;
