@@ -1,0 +1,96 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: billing-queue
+  labels:
+    app: billing-queue
+spec:
+  selector:
+    app: billing-queue
+  ports:
+    - name: amqp
+      protocol: TCP
+      port: 5672
+      targetPort: 5672
+  clusterIP: None
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: billing-queue
+spec:
+  serviceName: billing-queue
+  replicas: 1
+  selector:
+    matchLabels:
+      app: billing-queue
+  minReadySeconds: 10
+  template:
+    metadata:
+      labels:
+        app: billing-queue
+    spec:
+      restartPolicy: Always
+      containers:
+        - name: billing-queue
+          image: orchestratorproject/billing-queue:latest
+          env:
+            - name: RABBITMQ_DEFAULT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: orchestrator-secrets
+                  key: RABBITMQ_USER
+            - name: RABBITMQ_DEFAULT_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: orchestrator-secrets
+                  key: RABBITMQ_PASSWORD
+            - name: RABBITMQ_LOCAL_URL
+              valueFrom:
+                secretKeyRef:
+                  name: orchestrator-secrets
+                  key: RABBITMQ_LOCAL_URL
+            - name: RABBITMQ_QUEUE
+              valueFrom:
+                secretKeyRef:
+                  name: orchestrator-secrets
+                  key: RABBITMQ_QUEUE
+          ports:
+            - name: amqp
+              containerPort: 5672
+          volumeMounts:
+            - name: billing-queue-data
+              mountPath: /var/lib/rabbitmq
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "128Mi"
+              cpu: "200m"
+  volumeClaimTemplates:
+    - metadata:
+        name: billing-queue-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
+        storageClassName: local-storage
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: billing-queue-vol
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  hostPath:
+    path: /mnt/data/rabbitmq
+  claimRef:
+    namespace: default
+    name: billing-queue-data-billing-queue-0
