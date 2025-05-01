@@ -33,57 +33,57 @@ spec:
             - name: BILLING_DB_HOST
               valueFrom:
                 secretKeyRef:
-                  name: orchestrator-secrets
+                  name: billing-secrets
                   key: BILLING_DB_HOST
             - name: BILLING_DB_PORT
               valueFrom:
                 secretKeyRef:
-                  name: orchestrator-secrets
+                  name: billing-secrets
                   key: BILLING_DB_PORT
             - name: BILLING_DB_NAME
               valueFrom:
                 secretKeyRef:
-                  name: orchestrator-secrets
+                  name: billing-secrets
                   key: BILLING_DB_NAME
             - name: BILLING_DB_USER
               valueFrom:
                 secretKeyRef:
-                  name: orchestrator-secrets
+                  name: billing-secrets
                   key: BILLING_DB_USER
             - name: BILLING_DB_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: orchestrator-secrets
+                  name: billing-secrets
                   key: BILLING_DB_PASSWORD
             - name: RABBITMQ_HOST
               valueFrom:
                 secretKeyRef:
-                  name: orchestrator-secrets
+                  name: billing-secrets
                   key: RABBITMQ_HOST
             - name: RABBITMQ_PORT
               valueFrom:
                 secretKeyRef:
-                  name: orchestrator-secrets
+                  name: billing-secrets
                   key: RABBITMQ_PORT
             - name: RABBITMQ_USER
               valueFrom:
                 secretKeyRef:
-                  name: orchestrator-secrets
+                  name: billing-secrets
                   key: RABBITMQ_USER
             - name: RABBITMQ_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: orchestrator-secrets
+                  name: billing-secrets
                   key: RABBITMQ_PASSWORD
             - name: RABBITMQ_API_URL
               valueFrom:
                 secretKeyRef:
-                  name: orchestrator-secrets
+                  name: billing-secrets
                   key: RABBITMQ_API_URL
             - name: RABBITMQ_QUEUE
               valueFrom:
                 secretKeyRef:
-                  name: orchestrator-secrets
+                  name: billing-secrets
                   key: RABBITMQ_QUEUE
           resources:
             requests:

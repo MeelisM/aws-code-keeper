@@ -26,7 +26,7 @@ spec:
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: orchestrator-secrets
+                  name: billing-secrets
                   key: BILLING_POSTGRES_PASSWORD
             - name: POSTGRES_DB
               value: "postgres"
@@ -34,17 +34,17 @@ spec:
             - name: BILLING_DB_USER
               valueFrom:
                 secretKeyRef:
-                  name: orchestrator-secrets
+                  name: billing-secrets
                   key: BILLING_DB_USER
             - name: BILLING_DB_NAME
               valueFrom:
                 secretKeyRef:
-                  name: orchestrator-secrets
+                  name: billing-secrets
                   key: BILLING_DB_NAME
             - name: BILLING_DB_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: orchestrator-secrets
+                  name: billing-secrets
                   key: BILLING_DB_PASSWORD
           volumeMounts:
             - name: billing-db-data

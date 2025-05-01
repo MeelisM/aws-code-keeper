@@ -38,22 +38,22 @@ spec:
             - name: RABBITMQ_DEFAULT_USER
               valueFrom:
                 secretKeyRef:
-                  name: orchestrator-secrets
+                  name: api-gateway-secrets
                   key: RABBITMQ_USER
             - name: RABBITMQ_DEFAULT_PASS
               valueFrom:
                 secretKeyRef:
-                  name: orchestrator-secrets
+                  name: api-gateway-secrets
                   key: RABBITMQ_PASSWORD
             - name: RABBITMQ_LOCAL_URL
               valueFrom:
                 secretKeyRef:
-                  name: orchestrator-secrets
+                  name: api-gateway-secrets
                   key: RABBITMQ_LOCAL_URL
             - name: RABBITMQ_QUEUE
               valueFrom:
                 secretKeyRef:
-                  name: orchestrator-secrets
+                  name: api-gateway-secrets
                   key: RABBITMQ_QUEUE
           ports:
             - name: amqp

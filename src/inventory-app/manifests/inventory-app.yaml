@@ -38,27 +38,27 @@ spec:
             - name: INVENTORY_DB_HOST
               valueFrom:
                 secretKeyRef:
-                  name: orchestrator-secrets
+                  name: inventory-secrets
                   key: INVENTORY_DB_HOST
             - name: INVENTORY_DB_PORT
               valueFrom:
                 secretKeyRef:
-                  name: orchestrator-secrets
+                  name: inventory-secrets
                   key: INVENTORY_DB_PORT
             - name: INVENTORY_DB_NAME
               valueFrom:
                 secretKeyRef:
-                  name: orchestrator-secrets
+                  name: inventory-secrets
                   key: INVENTORY_DB_NAME
             - name: INVENTORY_DB_USER
               valueFrom:
                 secretKeyRef:
-                  name: orchestrator-secrets
+                  name: inventory-secrets
                   key: INVENTORY_DB_USER
             - name: INVENTORY_DB_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: orchestrator-secrets
+                  name: inventory-secrets
                   key: INVENTORY_DB_PASSWORD
           resources:
             requests:

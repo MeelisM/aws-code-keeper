@@ -38,27 +38,27 @@ spec:
             - name: GATEWAY_HOST
               valueFrom:
                 secretKeyRef:
-                  name: orchestrator-secrets
+                  name: api-gateway-secrets
                   key: GATEWAY_HOST
             - name: GATEWAY_PORT
               valueFrom:
                 secretKeyRef:
-                  name: orchestrator-secrets
+                  name: api-gateway-secrets
                   key: GATEWAY_PORT
             - name: INVENTORY_URL
               valueFrom:
                 secretKeyRef:
-                  name: orchestrator-secrets
+                  name: api-gateway-secrets
                   key: INVENTORY_URL
             - name: RABBITMQ_API_URL
               valueFrom:
                 secretKeyRef:
-                  name: orchestrator-secrets
+                  name: api-gateway-secrets
                   key: RABBITMQ_API_URL
             - name: RABBITMQ_QUEUE
               valueFrom:
                 secretKeyRef:
-                  name: orchestrator-secrets
+                  name: api-gateway-secrets
                   key: RABBITMQ_QUEUE
           resources:
             requests:

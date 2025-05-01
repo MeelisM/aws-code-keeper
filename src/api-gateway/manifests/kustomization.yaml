@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+secretGenerator:
+  - name: api-gateway-secrets
+    envs:
+      - ../.env
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    app: api-gateway
+  annotations:
+    note: generated
+
+resources:
+  - api-gateway-app.yaml
+  - billing-queue.yaml
+  - networking/api-gateway-ingress.tpl.yaml
