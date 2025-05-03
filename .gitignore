@@ -186,3 +186,7 @@ terraform.rc
 
 # Manifest files
 manifests/networking/api-gateway-ingress.yaml
+
+# Ansible
+ansible/group_vars/vault.yml
+ansible/group_vars/all.yml

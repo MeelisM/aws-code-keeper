@@ -23,8 +23,6 @@ variables:
   CONTAINER_IMAGE: ${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}
   STAGING_KUBE_NAMESPACE: staging
   PROD_KUBE_NAMESPACE: production
-  TEST_KUBE_NAMESPACE: test
-  # Note: GITLAB_REGISTRY_URL and GITLAB_ROOT_PASSWORD are provided by GitLab CI/CD variables
 
 # Common setup that runs before Node.js jobs
 .node-setup:
@@ -79,7 +77,7 @@ build:
     paths:
       - node_modules/
       - package*.json
-      - "**/*" # Include all repository files
+      - "**/*"
 
 test:
   stage: test
@@ -100,14 +98,14 @@ scan:
     - microservices
   script:
     - echo "Running code quality scan..."
-    - npm install jshint --no-save # Install locally instead of globally
+    - npm install jshint --no-save
     - ./node_modules/.bin/jshint --extract=auto --exclude=node_modules ./ > gl-code-quality-report.json || echo "Code quality analysis completed with warnings"
   artifacts:
     paths:
       - gl-code-quality-report.json
   dependencies:
     - build
-  allow_failure: true # Don't block pipeline if scan fails, but report issues
+  allow_failure: true
   only:
     - main
     - merge_requests
@@ -177,27 +175,44 @@ containerize:
   image:
     name: docker:27.5.1
   variables:
-    # Set to use the Docker socket directly
     DOCKER_HOST: unix:///var/run/docker.sock
     DOCKER_TLS_CERTDIR: ""
   script:
-    - echo "Setting up Docker environment..."
+    - echo "Setting up Docker environment"
     - docker info || { echo "Docker not available"; exit 1; }
-    - echo "Building Docker image..."
+
+    # Configure Docker daemon on host to accept insecure registry
+    - echo "Configuring Docker for insecure registry"
+    - echo "{\"insecure-registries\":[\"${GITLAB_REGISTRY_URL}\"]}" > /tmp/daemon.json
+    - cat /tmp/daemon.json
+
     - cd dockerfiles
 
-    - export FULL_IMAGE_NAME="${GITLAB_REGISTRY_URL}/root/api-gateway:${CI_COMMIT_SHORT_SHA}"
+    # Build and push API Gateway image
+    - export API_GATEWAY_IMAGE="${GITLAB_REGISTRY_URL}/root/api-gateway:${CI_COMMIT_SHORT_SHA}"
+    - echo "Building API Gateway image..."
+    - docker build -t ${API_GATEWAY_IMAGE} -f Dockerfile.api-gateway ..
 
-    - docker build -t ${FULL_IMAGE_NAME} -f Dockerfile.api-gateway ..
+    # Build and push Billing Queue image (part of the api-gateway repository)
+    - export BILLING_QUEUE_IMAGE="${GITLAB_REGISTRY_URL}/root/api-gateway/billing-queue:${CI_COMMIT_SHORT_SHA}"
+    - echo "Building Billing Queue image..."
+    - docker build -t ${BILLING_QUEUE_IMAGE} -f Dockerfile.billing-queue .
+
     - echo "Logging in to GitLab Container Registry..."
-
     - echo "Attempting Docker login to registry..."
-    - docker login -u root -p "${REGISTRY_PASSWORD}" ${GITLAB_REGISTRY_URL} || echo "Login failed but continuing anyway"
+    - docker login -u root -p "${GITLAB_REGISTRY_PASSWORD}" ${GITLAB_REGISTRY_URL} || echo "Login failed but continuing anyway"
 
-    - echo "Pushing image ${FULL_IMAGE_NAME}..."
-    - docker push ${FULL_IMAGE_NAME} || echo "Push failed, may need to configure registry permissions"
-    - docker tag ${FULL_IMAGE_NAME} ${GITLAB_REGISTRY_URL}/root/api-gateway:latest
+    # Push API Gateway image
+    - echo "Pushing API Gateway image ${API_GATEWAY_IMAGE}..."
+    - docker push ${API_GATEWAY_IMAGE} || echo "Push failed, may need to configure registry permissions"
+    - docker tag ${API_GATEWAY_IMAGE} ${GITLAB_REGISTRY_URL}/root/api-gateway:latest
     - docker push ${GITLAB_REGISTRY_URL}/root/api-gateway:latest || echo "Push of latest tag failed"
+
+    # Push Billing Queue image
+    - echo "Pushing Billing Queue image ${BILLING_QUEUE_IMAGE}..."
+    - docker push ${BILLING_QUEUE_IMAGE} || echo "Push failed, may need to configure registry permissions"
+    - docker tag ${BILLING_QUEUE_IMAGE} ${GITLAB_REGISTRY_URL}/root/api-gateway/billing-queue:latest
+    - docker push ${GITLAB_REGISTRY_URL}/root/api-gateway/billing-queue:latest || echo "Push of latest tag failed"
   dependencies:
     - build
   only:
@@ -208,8 +223,8 @@ deploy-test:
   tags:
     - microservices
   script:
-    - ls -la # Verify repository files are available
-    - echo "Verifying Docker connectivity..."
+    - ls -la
+    - echo "Verifying Docker connectivity"
     - docker info || (echo "Docker not available" && exit 1)
     - echo "Testing deployment with docker-compose"
 
@@ -254,7 +269,7 @@ staging-approval:
     - echo "Waiting for manual approval to deploy to staging environment"
   environment:
     name: staging-approval
-  when: manual # This makes the job require manual approval
+  when: manual
   only:
     - main
 
@@ -281,8 +296,15 @@ deploy-staging:
         --from-literal=INVENTORY_URL=${STAGING_INVENTORY_URL} \
         -n ${STAGING_KUBE_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
     - echo "Deploying to staging environment on EKS"
+    # Replace image placeholders in manifests
+    - sed -i "s|IMAGE_REPO|${GITLAB_REGISTRY_URL}/root/api-gateway|g" manifests/api-gateway-app.yaml
     - sed -i "s|IMAGE_TAG|${CI_COMMIT_SHORT_SHA}|g" manifests/api-gateway-app.yaml
-    - sed -i "s|IMAGE_REPO|${CI_REGISTRY_IMAGE}|g" manifests/api-gateway-app.yaml
+
+    # Replace billing-queue image variables
+    - sed -i "s|\${GITLAB_REGISTRY_URL}|${GITLAB_REGISTRY_URL}|g" manifests/billing-queue.yaml
+    - sed -i "s|\${CI_COMMIT_SHORT_SHA}|${CI_COMMIT_SHORT_SHA}|g" manifests/billing-queue.yaml
+
+    # Apply Kubernetes manifests
     - kubectl apply -f manifests/api-gateway-app.yaml -n ${STAGING_KUBE_NAMESPACE}
     - kubectl apply -f manifests/billing-queue.yaml -n ${STAGING_KUBE_NAMESPACE}
     - kubectl apply -k manifests/ -n ${STAGING_KUBE_NAMESPACE}
@@ -294,7 +316,6 @@ deploy-staging:
       echo "Service available at: $SERVICE_URL"
   environment:
     name: staging
-    # Use the AWS ELB hostname dynamically
     url: http://$SERVICE_URL
   dependencies:
     - containerize
@@ -336,8 +357,15 @@ deploy-prod:
         --from-literal=INVENTORY_URL=${PROD_INVENTORY_URL} \
         -n ${PROD_KUBE_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
     - echo "Deploying to production environment on EKS"
+    # Replace image placeholders in manifests
+    - sed -i "s|IMAGE_REPO|${GITLAB_REGISTRY_URL}/root/api-gateway|g" manifests/api-gateway-app.yaml
     - sed -i "s|IMAGE_TAG|${CI_COMMIT_SHORT_SHA}|g" manifests/api-gateway-app.yaml
-    - sed -i "s|IMAGE_REPO|${CI_REGISTRY_IMAGE}|g" manifests/api-gateway-app.yaml
+
+    # Replace billing-queue image variables
+    - sed -i "s|\${GITLAB_REGISTRY_URL}|${GITLAB_REGISTRY_URL}|g" manifests/billing-queue.yaml
+    - sed -i "s|\${CI_COMMIT_SHORT_SHA}|${CI_COMMIT_SHORT_SHA}|g" manifests/billing-queue.yaml
+
+    # Apply Kubernetes manifests
     - kubectl apply -f manifests/api-gateway-app.yaml -n ${PROD_KUBE_NAMESPACE}
     - kubectl apply -f manifests/billing-queue.yaml -n ${PROD_KUBE_NAMESPACE}
     - kubectl apply -k manifests/ -n ${PROD_KUBE_NAMESPACE}
@@ -349,7 +377,6 @@ deploy-prod:
       echo "Service available at: $SERVICE_URL"
   environment:
     name: production
-    # Use the AWS ELB hostname dynamically
     url: http://$SERVICE_URL
   dependencies:
     - containerize

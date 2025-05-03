@@ -256,8 +256,8 @@
       PRIVATE-TOKEN: "{{ gitlab_api_token }}"
     body_format: json
     body:
-      key: "GITLAB_ROOT_PASSWORD"
-      value: "{{ gitlab_root_password }}"
+      key: "GITLAB_REGISTRY_PASSWORD"
+      value: "{{ gitlab_registry_password }}"
       protected: true
       masked: true
       variable_type: "env_var"
@@ -265,3 +265,57 @@
     validate_certs: "{{ gitlab_validate_certs }}"
   ignore_errors: yes
   register: create_registry_password_variable_result
+
+- name: Get GitLab runner registration token
+  uri:
+    url: "{{ gitlab_url }}/api/v4/user/runners"
+    method: POST
+    headers:
+      PRIVATE-TOKEN: "{{ gitlab_api_token }}"
+    body_format: json
+    body:
+      description: "Docker Runner"
+      tag_list: "docker,microservices"
+      run_untagged: true
+      locked: false
+      runner_type: "instance_type"
+    status_code: [201, 400, 409]
+    validate_certs: "{{ gitlab_validate_certs }}"
+    return_content: true
+  register: runner_response
+  ignore_errors: yes
+
+- name: Set runner registration token fact
+  set_fact:
+    gitlab_runner_token: "{{ runner_response.json.token }}"
+  when: runner_response is defined and runner_response.json is defined and runner_response.json.token is defined
+
+- name: Display runner token
+  debug:
+    msg: "Runner Registration Token: {{ gitlab_runner_token | default('Token not available') }}"
+
+- name: Unregister all existing GitLab runners
+  shell: |
+    docker exec gitlab-runner gitlab-runner unregister --all-runners
+  register: runner_unregister
+  ignore_errors: yes
+
+- name: Register GitLab runner
+  shell: |
+    docker exec gitlab-runner gitlab-runner register \
+        --non-interactive \
+        --url "{{ gitlab_url }}" \
+        --token "{{ gitlab_runner_token }}" \
+        --executor "docker" \
+        --docker-image alpine:latest \
+        --description "Docker Runner" \
+        --docker-privileged \
+        --docker-volumes "/var/run/docker.sock:/var/run/docker.sock" \
+        --docker-network-mode "host"
+  register: runner_registration
+  failed_when: >
+    runner_registration.rc != 0 and 
+    "already exists" not in runner_registration.stderr and
+    "is already registered" not in runner_registration.stderr
+  changed_when: runner_registration.rc == 0
+  when: gitlab_runner_token is defined

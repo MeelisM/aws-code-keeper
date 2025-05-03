@@ -26,6 +26,8 @@
         method: GET
         status_code: 200
         validate_certs: false
+        headers:
+          PRIVATE-TOKEN: "{{ gitlab_api_token }}"
       register: gitlab_health_check
       until: gitlab_health_check.status == 200
       retries: 30
