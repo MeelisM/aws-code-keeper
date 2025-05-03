@@ -86,5 +86,5 @@ variable "certificate_common_name" {
 variable "cli_admin_username" {
   description = "Username of the CLI admin user that needs AWS permissions"
   type        = string
-  default     = "cli-admin"
+  default     = "cli_admin"
 }

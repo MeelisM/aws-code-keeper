@@ -11,118 +11,274 @@ stages:
   - apply-prod
 
 variables:
-  TF_VAR_FILE: terraform.tfvars
-  TF_STATE_NAME: infrastructure
+  STAGING_TF_VAR_FILE: terraform-staging.tfvars
+  PRODUCTION_TF_VAR_FILE: terraform-production.tfvars
 
 # Common setup that runs before all jobs
 .terraform-setup:
   image:
-    name: hashicorp/terraform:latest
-    entrypoint: [""] # Override any entrypoint to ensure we can use bash
+    name: hashicorp/terraform:1.11.4
+    entrypoint: [""]
+  before_script:
+    - apk add --no-cache bash jq curl sed
+    - terraform --version
+    - echo "Creating tfvars files dynamically from environment variables..."
+
+    # Fix for JSON arrays that come in as strings with escaped quotes
+    - |
+      process_json_array() {
+        # Remove the outer quotes and unescape the inner quotes
+        echo "$1" | sed 's/^"\(.*\)"$/\1/' | sed 's/\\"/"/g'
+      }
+
+    # Create staging tfvars file
+    - |
+      cat > ${STAGING_TF_VAR_FILE} <<EOF
+      aws_region         = "${AWS_DEFAULT_REGION}"
+      environment        = "staging"
+      cli_admin_username = "${TF_VAR_cli_admin_username}"
+
+      # VPC Configuration
+      vpc_cidr             = "${TF_VAR_STAGING_vpc_cidr}"
+      public_subnet_cidrs  = $(process_json_array "${TF_VAR_STAGING_public_subnet_cidrs}")
+      private_subnet_cidrs = $(process_json_array "${TF_VAR_STAGING_private_subnet_cidrs}")
+      availability_zones   = $(process_json_array "${TF_VAR_STAGING_availability_zones}")
+
+      # EKS Configuration
+      cluster_name    = "${TF_VAR_STAGING_cluster_name}"
+      cluster_version = "${TF_VAR_STAGING_cluster_version}"
+
+      # Node Group Configuration
+      node_instance_types = $(process_json_array "${TF_VAR_STAGING_node_instance_types}")
+      capacity_type       = "${TF_VAR_STAGING_capacity_type}"
+      desired_capacity    = ${TF_VAR_STAGING_desired_capacity}
+      min_capacity        = ${TF_VAR_STAGING_min_capacity}
+      max_capacity        = ${TF_VAR_STAGING_max_capacity}
+      EOF
+
+    # Create production tfvars file
+    - |
+      cat > ${PRODUCTION_TF_VAR_FILE} <<EOF
+      aws_region         = "${AWS_DEFAULT_REGION}"
+      environment        = "production"
+      cli_admin_username = "${TF_VAR_cli_admin_username}"
+
+      # VPC Configuration
+      vpc_cidr             = "${TF_VAR_PROD_vpc_cidr}"
+      public_subnet_cidrs  = $(process_json_array "${TF_VAR_PROD_public_subnet_cidrs}")
+      private_subnet_cidrs = $(process_json_array "${TF_VAR_PROD_private_subnet_cidrs}")
+      availability_zones   = $(process_json_array "${TF_VAR_PROD_availability_zones}")
+
+      # EKS Configuration
+      cluster_name    = "${TF_VAR_PROD_cluster_name}"
+      cluster_version = "${TF_VAR_PROD_cluster_version}"
+
+      # Node Group Configuration
+      node_instance_types = $(process_json_array "${TF_VAR_PROD_node_instance_types}")
+      capacity_type       = "${TF_VAR_PROD_capacity_type}"
+      desired_capacity    = ${TF_VAR_PROD_desired_capacity}
+      min_capacity        = ${TF_VAR_PROD_min_capacity}
+      max_capacity        = ${TF_VAR_PROD_max_capacity}
+      EOF
+
+    - echo "Tfvars files created:"
+    - cat ${STAGING_TF_VAR_FILE}
+    - cat ${PRODUCTION_TF_VAR_FILE}
+    - echo "Running terraform init in each job to ensure modules are available"
+    - terraform init
 
 # Initialize Terraform
 init:
   stage: init
-  tags:
-    - infra
   extends: .terraform-setup
   script:
-    - terraform version
-    - terraform init
+    - echo "Initializing Terraform..."
+    - terraform state list || echo "No state exists yet or not accessible"
   artifacts:
     paths:
-      - .terraform
       - .terraform.lock.hcl
+      - ${STAGING_TF_VAR_FILE}
+      - ${PRODUCTION_TF_VAR_FILE}
+    expire_in: 1 week
 
 # Validate Terraform configuration
 validate:
   stage: validate
-  tags:
-    - infra
   extends: .terraform-setup
   script:
+    - echo "Validating Terraform files..."
+    - terraform fmt -check -recursive
     - terraform validate
-  dependencies:
-    - init
+    # Custom check for security best practices
+    - echo "Checking for hardcoded secrets..."
+    - find . -type f -name "*.tf" -exec grep -l "access_key\|secret_key\|password\|token" {} \; | tee potential_secrets.txt
+    - |
+      if [ -s potential_secrets.txt ]; then 
+        echo "WARNING: Potential hardcoded secrets found!"
+      fi
+  artifacts:
+    paths:
+      - potential_secrets.txt
+    when: on_failure
+    expire_in: 1 week
 
 # Plan changes for staging
 plan-staging:
   stage: plan
-  tags:
-    - infra
   extends: .terraform-setup
   script:
-    - terraform plan -var-file=${TF_VAR_FILE} -var="environment=staging" -out=staging.tfplan
-  dependencies:
-    - init
-    - validate
+    - echo "Planning changes for staging environment..."
+    - echo "Checking AWS credential info..."
+    - aws sts get-caller-identity || echo "Failed to get AWS identity"
+    - terraform workspace select staging || terraform workspace new staging
+    - |
+      if [ -f "${STAGING_TF_VAR_FILE}" ]; then
+        echo "Using tfvars file: ${STAGING_TF_VAR_FILE}"
+        terraform plan -var-file=${STAGING_TF_VAR_FILE} -out=staging.tfplan
+      else
+        echo "Warning: ${STAGING_TF_VAR_FILE} not found, using default variables"
+        terraform plan -out=staging.tfplan
+      fi
+    # Create a human-readable output of the plan
+    - terraform show -no-color staging.tfplan > staging-plan-output.txt
   artifacts:
     paths:
       - staging.tfplan
+      - staging-plan-output.txt
+    expire_in: 1 week
   environment:
     name: staging
 
 # Apply changes to staging
 apply-staging:
   stage: apply-staging
-  tags:
-    - infra
   extends: .terraform-setup
-  script:
-    - terraform apply -auto-approve staging.tfplan
   dependencies:
     - plan-staging
+  script:
+    - echo "Applying changes to staging environment..."
+    - terraform workspace select staging || terraform workspace new staging
+    - terraform apply -auto-approve staging.tfplan
+    - terraform output -json > terraform-output-staging.json
+  artifacts:
+    paths:
+      - terraform-output-staging.json
+      - .terraform
+      - terraform.tfstate
+      - terraform.tfstate.backup
+      - terraform.tfstate.d/
+    expire_in: 1 week
   environment:
     name: staging
-  only:
-    - main
+    on_stop: cleanup-staging
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: manual
+      allow_failure: true
 
 # Manual approval for production deployment
 approval-prod:
   stage: approval
-  tags:
-    - infra
   image: alpine:latest
   script:
     - echo "Deployment to production requires approval"
+    - echo "Review the staging environment before proceeding"
+    - echo "After approval, changes will be directly applied to production"
   environment:
-    name: production
-  when: manual
-  only:
-    - main
+    name: production-approval
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+      allow_failure: true
 
-# Plan changes for production
-plan-prod:
-  stage: plan
-  tags:
-    - infra
+# Apply changes to production (includes planning)
+apply-prod:
+  stage: apply-prod
   extends: .terraform-setup
-  script:
-    - terraform plan -var-file=${TF_VAR_FILE} -var="environment=production" -out=production.tfplan
   dependencies:
     - init
     - validate
+    - approval-prod
+  script:
+    - echo "Planning and applying changes to production environment..."
+    - terraform workspace select production || terraform workspace new production
+    - |
+      if [ -f "${PRODUCTION_TF_VAR_FILE}" ]; then
+        echo "Using tfvars file: ${PRODUCTION_TF_VAR_FILE}"
+        terraform plan -var-file=${PRODUCTION_TF_VAR_FILE} -out=production.tfplan
+      else
+        echo "Warning: ${PRODUCTION_TF_VAR_FILE} not found, using default variables"
+        terraform plan -out=production.tfplan
+      fi
+    - terraform apply -auto-approve production.tfplan
+    # Export outputs for later use
+    - terraform output -json > terraform-output-production.json
+    # Tagging successful deployments
+    - |
+      if [ -n "${CI_COMMIT_TAG}" ]; then
+        echo "This build is tagged as ${CI_COMMIT_TAG}"
+      else
+        CI_DEPLOY_VERSION=$(date '+%Y%m%d%H%M%S')
+        echo "Creating deployment tag v${CI_DEPLOY_VERSION}"
+        echo "${CI_DEPLOY_VERSION}" > deploy-version.txt
+      fi
   artifacts:
     paths:
-      - production.tfplan
+      - terraform-output-production.json
+      - deploy-version.txt
+    expire_in: 4 weeks
   environment:
     name: production
-  only:
-    - main
+    on_stop: cleanup-prod
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+      allow_failure: true
 
-# Apply changes to production
-apply-prod:
-  stage: apply-prod
-  tags:
-    - infra
+# Optional cleanup jobs (only triggered manually)
+cleanup-staging:
+  stage: apply-staging
   extends: .terraform-setup
-  script:
-    - terraform apply -auto-approve production.tfplan
   dependencies:
-    - plan-prod
-    - approval-prod
+    - apply-staging # Changed from 'init' to 'apply-staging' to get state files
+  script:
+    - |
+      echo "WARNING: This will DESTROY all resources in the staging environment!"
+    - terraform workspace select staging || terraform workspace new staging
+    - |
+      if [ -f "${STAGING_TF_VAR_FILE}" ]; then
+        terraform destroy -var-file=${STAGING_TF_VAR_FILE} -auto-approve
+      else
+        terraform destroy -auto-approve
+      fi
+  environment:
+    name: staging
+    action: stop
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+      allow_failure: true
+
+cleanup-prod:
+  stage: apply-prod
+  extends: .terraform-setup
+  dependencies:
+    - apply-prod # Changed from 'init' to 'apply-prod' to get state files
+  script:
+    - |
+      echo "WARNING: This will DESTROY all resources in the production environment!"
+    - terraform workspace select production || terraform workspace new production
+    - |
+      if [ -f "${PRODUCTION_TF_VAR_FILE}" ]; then
+        terraform destroy -var-file=${PRODUCTION_TF_VAR_FILE} -auto-approve
+      else
+        terraform destroy -auto-approve
+      fi
   environment:
     name: production
-  when: manual
-  only:
-    - main
+    action: stop
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+      allow_failure: true

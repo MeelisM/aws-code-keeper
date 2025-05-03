@@ -84,7 +84,7 @@ module "cloudwatch_dashboard" {
 
 # Generate Kubernetes manifest file and insert certificate ARN for API Gateway ingress
 resource "local_file" "api_gateway_ingress" {
-  content = templatefile("${path.root}/../manifests/networking/api-gateway-ingress.tpl.yaml", {
+  content = templatefile("${path.root}/manifests/networking/api-gateway-ingress.tpl.yaml", {
     ACM_CERTIFICATE_ARN = module.acm.certificate_arn
   })
   filename = "${path.root}/../manifests/networking/api-gateway-ingress.yaml"
