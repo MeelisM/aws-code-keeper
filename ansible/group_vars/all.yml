@@ -1,0 +1,29 @@
+---
+# GitLab Connection Settings
+
+# You MUST update this GitLab API token before running the playbook
+# For testing, you can generate a personal access token from your GitLab instance:
+# 1. Log in to GitLab as root user
+# 2. Go to User Settings > Access Tokens
+# 3. Create a token with 'api' scope
+gitlab_api_token: "glpat-sTpm8VPgwGzAjrQx9mAB"
+
+# GitLab URL - used for both API calls and web browsing
+gitlab_url: "http://192.168.1.101"
+
+# Set to true if using HTTPS with a valid certificate
+gitlab_validate_certs: false
+
+# Git settings for repository initialization
+# For testing, you can use any email and name - these don't need to exist
+git_user_email: "test@example.com"
+git_user_name: "Test User"
+
+# SSH key configuration
+# Path to the public SSH key to register with GitLab
+# Change this value to match your actual SSH key location if different
+ssh_key_path: "~/.ssh/id_ed25519.pub"
+ssh_key_title: "Ansible automation key"
+
+# GitLab registry URL - used for Docker image storage
+gitlab_registry_url: "{{ gitlab_registry_url }}"

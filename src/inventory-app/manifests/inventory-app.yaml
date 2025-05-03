@@ -31,7 +31,7 @@ spec:
             ]
       containers:
         - name: inventory-app
-          image: orchestratorproject/inventory-app:latest
+          image: IMAGE_REPO:IMAGE_TAG
           ports:
             - containerPort: 8080
           env:

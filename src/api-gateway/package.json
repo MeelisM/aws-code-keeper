@@ -8,6 +8,7 @@
   "main": "routes.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "mkdir -p dist && cp -r *.js config routes.js package.json dist/",
     "start": "node server.js"
   },
   "dependencies": {

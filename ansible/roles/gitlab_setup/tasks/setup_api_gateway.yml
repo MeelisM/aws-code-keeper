@@ -1,0 +1,26 @@
+---
+- name: Create API Gateway directory structure
+  file:
+    path: "{{ temp_dir.path }}/{{ repo_name }}"
+    state: directory
+
+- name: Copy entire API Gateway source code from existing project
+  copy:
+    src: "{{ playbook_dir }}/../src/api-gateway/"
+    dest: "{{ temp_dir.path }}/{{ repo_name }}/"
+    remote_src: yes
+  ignore_errors: yes
+
+- name: Commit and push API Gateway structure
+  shell: |
+    cd {{ temp_dir.path }}/{{ repo_name }}
+    git config --local user.email "{{ git_user_email }}"
+    git config --local user.name "{{ git_user_name }}"
+    git config --local commit.gpgsign false
+    git config --local credential.helper "store --file=/tmp/git-credentials"
+    echo "http://oauth2:{{ gitlab_api_token }}@{{ gitlab_url | replace('http://', '') }}" > /tmp/git-credentials
+    git add .
+    git commit -m "Add API Gateway project structure"
+    git push
+    rm -f /tmp/git-credentials
+  ignore_errors: yes

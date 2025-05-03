@@ -1,0 +1,128 @@
+default:
+  tags:
+    - infra
+
+stages:
+  - init
+  - validate
+  - plan
+  - apply-staging
+  - approval
+  - apply-prod
+
+variables:
+  TF_VAR_FILE: terraform.tfvars
+  TF_STATE_NAME: infrastructure
+
+# Common setup that runs before all jobs
+.terraform-setup:
+  image:
+    name: hashicorp/terraform:latest
+    entrypoint: [""] # Override any entrypoint to ensure we can use bash
+
+# Initialize Terraform
+init:
+  stage: init
+  tags:
+    - infra
+  extends: .terraform-setup
+  script:
+    - terraform version
+    - terraform init
+  artifacts:
+    paths:
+      - .terraform
+      - .terraform.lock.hcl
+
+# Validate Terraform configuration
+validate:
+  stage: validate
+  tags:
+    - infra
+  extends: .terraform-setup
+  script:
+    - terraform validate
+  dependencies:
+    - init
+
+# Plan changes for staging
+plan-staging:
+  stage: plan
+  tags:
+    - infra
+  extends: .terraform-setup
+  script:
+    - terraform plan -var-file=${TF_VAR_FILE} -var="environment=staging" -out=staging.tfplan
+  dependencies:
+    - init
+    - validate
+  artifacts:
+    paths:
+      - staging.tfplan
+  environment:
+    name: staging
+
+# Apply changes to staging
+apply-staging:
+  stage: apply-staging
+  tags:
+    - infra
+  extends: .terraform-setup
+  script:
+    - terraform apply -auto-approve staging.tfplan
+  dependencies:
+    - plan-staging
+  environment:
+    name: staging
+  only:
+    - main
+
+# Manual approval for production deployment
+approval-prod:
+  stage: approval
+  tags:
+    - infra
+  image: alpine:latest
+  script:
+    - echo "Deployment to production requires approval"
+  environment:
+    name: production
+  when: manual
+  only:
+    - main
+
+# Plan changes for production
+plan-prod:
+  stage: plan
+  tags:
+    - infra
+  extends: .terraform-setup
+  script:
+    - terraform plan -var-file=${TF_VAR_FILE} -var="environment=production" -out=production.tfplan
+  dependencies:
+    - init
+    - validate
+  artifacts:
+    paths:
+      - production.tfplan
+  environment:
+    name: production
+  only:
+    - main
+
+# Apply changes to production
+apply-prod:
+  stage: apply-prod
+  tags:
+    - infra
+  extends: .terraform-setup
+  script:
+    - terraform apply -auto-approve production.tfplan
+  dependencies:
+    - plan-prod
+    - approval-prod
+  environment:
+    name: production
+  when: manual
+  only:
+    - main

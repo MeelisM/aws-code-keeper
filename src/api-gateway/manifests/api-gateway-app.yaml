@@ -31,7 +31,7 @@ spec:
             ]
       containers:
         - name: api-gateway
-          image: orchestratorproject/api-gateway:latest
+          image: IMAGE_REPO:IMAGE_TAG
           ports:
             - containerPort: 3000
           env:

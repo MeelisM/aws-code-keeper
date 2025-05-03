@@ -25,7 +25,7 @@ spec:
             ]
       containers:
         - name: billing-app
-          image: orchestratorproject/billing-app:latest
+          image: IMAGE_REPO:IMAGE_TAG
           imagePullPolicy: Always
           ports:
             - containerPort: 8080

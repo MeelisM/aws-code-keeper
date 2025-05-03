@@ -5,23 +5,36 @@ services:
     restart: always
     hostname: 'localhost'
     environment:
+    # Add IP-s manually
       GITLAB_OMNIBUS_CONFIG: |
-        external_url 'http://localhost'
-        gitlab_rails['gitlab_ssh_host'] = 'localhost'
+        external_url 'http://192.168.1.101'
+        gitlab_rails['gitlab_ssh_host'] = '192.168.1.101'
         gitlab_rails['gitlab_shell_ssh_port'] = 2222
         # Configure GitLab to use less memory if needed
         # postgresql['shared_buffers'] = "256MB"
     ports:
-      - '8080:80'
+      - '80:80'
       - '8443:443'
       - '2222:22'
     volumes:
-      - '$GITLAB_HOME/config:/etc/gitlab'
-      - '$GITLAB_HOME/logs:/var/log/gitlab'
-      - '$GITLAB_HOME/data:/var/opt/gitlab'
+      - './config:/etc/gitlab'
+      - './logs:/var/log/gitlab'
+      - './data:/var/opt/gitlab'
+      - '/var/run/docker.sock:/var/run/docker.sock' # Check socket path /run/docker.sock vs /var/run/docker.sock
     shm_size: '256m'
     networks:
       - gitlab-network
+
+  gitlab-runner:
+    image: gitlab/gitlab-runner:latest
+    container_name: gitlab-runner
+    restart: always
+    volumes:
+      - '/var/run/docker.sock:/var/run/docker.sock' # Check socket path /run/docker.sock vs /var/run/docker.sock
+      - './runners/config:/etc/gitlab-runner' 
+    networks:
+      - gitlab-network
+    privileged: true
 
 networks:
   gitlab-network:

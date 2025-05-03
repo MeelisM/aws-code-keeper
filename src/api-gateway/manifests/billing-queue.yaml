@@ -33,7 +33,7 @@ spec:
       restartPolicy: Always
       containers:
         - name: billing-queue
-          image: orchestratorproject/billing-queue:latest
+          image: IMAGE_REPO:IMAGE_TAG
           env:
             - name: RABBITMQ_DEFAULT_USER
               valueFrom:

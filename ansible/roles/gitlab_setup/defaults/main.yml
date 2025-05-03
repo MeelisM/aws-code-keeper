@@ -1,0 +1,26 @@
+---
+# Repository information - these define the GitLab repositories to be created
+repositories:
+  - name: api-gateway
+    description: "API Gateway service for code-keeper project"
+    visibility: "private"
+    initialize_with_readme: true
+    default_branch: "main"
+
+  - name: billing-service
+    description: "Billing service for code-keeper project"
+    visibility: "private"
+    initialize_with_readme: true
+    default_branch: "main"
+
+  - name: inventory-service
+    description: "Inventory service for code-keeper project"
+    visibility: "private"
+    initialize_with_readme: true
+    default_branch: "main"
+
+  - name: infrastructure
+    description: "Terraform and infrastructure code for code-keeper project"
+    visibility: "private"
+    initialize_with_readme: true
+    default_branch: "main"

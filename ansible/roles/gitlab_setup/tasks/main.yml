@@ -1,0 +1,267 @@
+---
+- name: Ensure GitLab API token is provided
+  fail:
+    msg: "GitLab API token must be provided. Set gitlab_api_token variable."
+  when: gitlab_api_token | length == 0
+
+- name: Add SSH key to GitLab root user
+  uri:
+    url: "{{ gitlab_url }}/api/v4/user/keys"
+    method: POST
+    headers:
+      PRIVATE-TOKEN: "{{ gitlab_api_token }}"
+    body_format: json
+    body:
+      title: "{{ ssh_key_title }}"
+      key: "{{ lookup('file', ssh_key_path) }}"
+    status_code: [201, 400] # 400 means key already exists, we'll consider that success too
+  register: ssh_key_result
+  failed_when: >
+    ssh_key_result.status != 201 and
+    (ssh_key_result.status != 400 or 
+     ('message' in ssh_key_result.json and 
+      'fingerprint_sha256' not in ssh_key_result.json.message and 
+      'already in use' not in ssh_key_result.json.message | default('')))
+
+- name: Create GitLab repositories
+  gitlab_project:
+    api_url: "{{ gitlab_url }}"
+    api_token: "{{ gitlab_api_token }}"
+    validate_certs: "{{ gitlab_validate_certs }}"
+    name: "{{ item.name }}"
+    description: "{{ item.description }}"
+    visibility: "{{ item.visibility }}"
+    initialize_with_readme: "{{ item.initialize_with_readme }}"
+    default_branch: "{{ item.default_branch }}"
+    state: present
+  loop: "{{ repositories }}"
+  register: gitlab_projects
+
+- name: Display created GitLab repositories
+  debug:
+    msg: "Created repository '{{ item.item.name }}' with URL: {{ gitlab_url }}/root/{{ item.item.name }}"
+  loop: "{{ gitlab_projects.results }}"
+  when: item.changed
+
+- name: Create temporary directory for cloning repositories
+  tempfile:
+    state: directory
+    suffix: git_repos
+  register: temp_dir
+
+- name: Clone repositories and add project structure
+  block:
+    - name: Clone repositories
+      git:
+        repo: "http://oauth2:{{ gitlab_api_token }}@{{ gitlab_url | replace('http://', '') }}/root/{{ item.item.name }}.git"
+        dest: "{{ temp_dir.path }}/{{ item.item.name }}"
+        accept_hostkey: yes
+        force: yes
+      loop: "{{ gitlab_projects.results }}"
+      register: cloned_repos
+      ignore_errors: yes
+
+    - name: Create API Gateway structure
+      include_tasks: setup_api_gateway.yml
+      vars:
+        repo_name: "api-gateway"
+      when: temp_dir.path is defined
+
+    - name: Create Billing Service structure
+      include_tasks: setup_billing_service.yml
+      vars:
+        repo_name: "billing-service"
+      when: temp_dir.path is defined
+
+    - name: Create Inventory Service structure
+      include_tasks: setup_inventory_service.yml
+      vars:
+        repo_name: "inventory-service"
+      when: temp_dir.path is defined
+
+    - name: Create Infrastructure structure
+      include_tasks: setup_infrastructure.yml
+      vars:
+        repo_name: "infrastructure"
+      when: temp_dir.path is defined
+
+  always:
+    - name: Clean up temporary directory
+      file:
+        path: "{{ temp_dir.path }}"
+        state: absent
+      when: temp_dir.path is defined
+
+- name: Get API Gateway project ID
+  uri:
+    url: "{{ gitlab_url }}/api/v4/projects?search=api-gateway"
+    method: GET
+    headers:
+      PRIVATE-TOKEN: "{{ gitlab_api_token }}"
+    status_code: 200
+    return_content: true
+  register: api_gateway_project
+
+- name: Get Billing Service project ID
+  uri:
+    url: "{{ gitlab_url }}/api/v4/projects?search=billing-service"
+    method: GET
+    headers:
+      PRIVATE-TOKEN: "{{ gitlab_api_token }}"
+    status_code: 200
+    return_content: true
+  register: billing_service_project
+
+- name: Get Inventory Service project ID
+  uri:
+    url: "{{ gitlab_url }}/api/v4/projects?search=inventory-service"
+    method: GET
+    headers:
+      PRIVATE-TOKEN: "{{ gitlab_api_token }}"
+    status_code: 200
+    return_content: true
+  register: inventory_service_project
+
+- name: Create API Gateway environment variables
+  uri:
+    url: "{{ gitlab_url }}/api/v4/projects/{{ api_gateway_project.json[0].id }}/variables"
+    method: POST
+    headers:
+      PRIVATE-TOKEN: "{{ gitlab_api_token }}"
+    body_format: json
+    body:
+      key: "{{ item.var_name }}"
+      value: "{{ item.var_value }}"
+      protected: "{{ item.protected | default(false) }}"
+      masked: "{{ item.masked | default(false) }}"
+    status_code: [201, 400]
+  with_items: "{{ api_gateway_vars }}"
+  register: api_gateway_variables
+  ignore_errors: yes
+  when: api_gateway_project is defined and api_gateway_project.json is defined
+
+- name: Create Billing Service environment variables
+  uri:
+    url: "{{ gitlab_url }}/api/v4/projects/{{ billing_service_project.json[0].id }}/variables"
+    method: POST
+    headers:
+      PRIVATE-TOKEN: "{{ gitlab_api_token }}"
+    body_format: json
+    body:
+      key: "{{ item.var_name }}"
+      value: "{{ item.var_value }}"
+      protected: "{{ item.protected | default(false) }}"
+      masked: "{{ item.masked | default(false) }}"
+    status_code: [201, 400]
+  with_items: "{{ billing_service_vars }}"
+  register: billing_vars
+  ignore_errors: yes
+  when: billing_service_project is defined and billing_service_project.json is defined
+
+- name: Create Inventory Service environment variables
+  uri:
+    url: "{{ gitlab_url }}/api/v4/projects/{{ inventory_service_project.json[0].id }}/variables"
+    method: POST
+    headers:
+      PRIVATE-TOKEN: "{{ gitlab_api_token }}"
+    body_format: json
+    body:
+      key: "{{ item.var_name }}"
+      value: "{{ item.var_value }}"
+      protected: "{{ item.protected | default(false) }}"
+      masked: "{{ item.masked | default(false) }}"
+    status_code: [201, 400]
+  with_items: "{{ inventory_service_vars }}"
+  register: inventory_vars
+  ignore_errors: yes
+  when: inventory_service_project is defined and inventory_service_project.json is defined
+
+- name: Create Global CI/CD environment variables for API Gateway
+  uri:
+    url: "{{ gitlab_url }}/api/v4/projects/{{ api_gateway_project.json[0].id }}/variables"
+    method: POST
+    headers:
+      PRIVATE-TOKEN: "{{ gitlab_api_token }}"
+    body_format: json
+    body:
+      key: "{{ item.var_name }}"
+      value: "{{ item.var_value }}"
+      protected: "{{ item.protected | default(false) }}"
+      masked: "{{ item.masked | default(false) }}"
+    status_code: [201, 400]
+  with_items: "{{ global_vars }}"
+  register: api_gateway_global_vars
+  ignore_errors: yes
+  when: api_gateway_project is defined and api_gateway_project.json is defined
+
+- name: Create Global CI/CD environment variables for Billing Service
+  uri:
+    url: "{{ gitlab_url }}/api/v4/projects/{{ billing_service_project.json[0].id }}/variables"
+    method: POST
+    headers:
+      PRIVATE-TOKEN: "{{ gitlab_api_token }}"
+    body_format: json
+    body:
+      key: "{{ item.var_name }}"
+      value: "{{ item.var_value }}"
+      protected: "{{ item.protected | default(false) }}"
+      masked: "{{ item.masked | default(false) }}"
+    status_code: [201, 400]
+  with_items: "{{ global_vars }}"
+  register: billing_service_global_vars
+  ignore_errors: yes
+  when: billing_service_project is defined and billing_service_project.json is defined
+
+- name: Create Global CI/CD environment variables for Inventory Service
+  uri:
+    url: "{{ gitlab_url }}/api/v4/projects/{{ inventory_service_project.json[0].id }}/variables"
+    method: POST
+    headers:
+      PRIVATE-TOKEN: "{{ gitlab_api_token }}"
+    body_format: json
+    body:
+      key: "{{ item.var_name }}"
+      value: "{{ item.var_value }}"
+      protected: "{{ item.protected | default(false) }}"
+      masked: "{{ item.masked | default(false) }}"
+    status_code: [201, 400]
+  with_items: "{{ global_vars }}"
+  register: inventory_service_global_vars
+  ignore_errors: yes
+  when: inventory_service_project is defined and inventory_service_project.json is defined
+
+- name: Create CI/CD variable for GitLab Registry URL
+  uri:
+    url: "{{ gitlab_url }}/api/v4/admin/ci/variables"
+    method: POST
+    headers:
+      PRIVATE-TOKEN: "{{ gitlab_api_token }}"
+    body_format: json
+    body:
+      key: "GITLAB_REGISTRY_URL"
+      value: "{{ gitlab_registry_url }}"
+      protected: false
+      masked: false
+      variable_type: "env_var"
+    status_code: [201, 400]
+    validate_certs: "{{ gitlab_validate_certs }}"
+  ignore_errors: yes
+  register: create_registry_url_variable_result
+
+- name: Create CI/CD variable for GitLab Registry Password
+  uri:
+    url: "{{ gitlab_url }}/api/v4/admin/ci/variables"
+    method: POST
+    headers:
+      PRIVATE-TOKEN: "{{ gitlab_api_token }}"
+    body_format: json
+    body:
+      key: "GITLAB_ROOT_PASSWORD"
+      value: "{{ gitlab_root_password }}"
+      protected: true
+      masked: true
+      variable_type: "env_var"
+    status_code: [201, 400]
+    validate_certs: "{{ gitlab_validate_certs }}"
+  ignore_errors: yes
+  register: create_registry_password_variable_result

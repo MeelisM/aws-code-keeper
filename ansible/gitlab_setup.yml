@@ -1,0 +1,39 @@
+---
+# Playbook for setting up GitLab repositories for the code-keeper project
+# This will create and populate repositories for:
+# - api-gateway
+# - billing-service
+# - inventory-service
+# - infrastructure (Terraform)
+#
+# Prerequisites:
+# 1. GitLab running (via docker-compose in ../gitlab/)
+# 2. Valid GitLab API token set in group_vars/all.yml
+
+- name: Set up GitLab repositories
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  vars_files:
+    - group_vars/all.yml
+    - group_vars/vault.yml
+
+  tasks:
+    # Add health check to ensure GitLab is fully up before proceeding
+    - name: Wait for GitLab to be ready
+      uri:
+        url: "{{ gitlab_url }}/api/v4/version"
+        method: GET
+        status_code: 200
+        validate_certs: false
+      register: gitlab_health_check
+      until: gitlab_health_check.status == 200
+      retries: 30
+      delay: 10
+
+    - name: Display GitLab version information
+      debug:
+        var: gitlab_health_check.json
+
+  roles:
+    - role: gitlab_setup

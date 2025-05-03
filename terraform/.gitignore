@@ -17,8 +17,6 @@ gitlab/logs/
 gitlab/config/**/*
 gitlab/data/**/*
 gitlab/logs/**/*
-gitlab/runners/
-vault.yml
 
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
