@@ -275,7 +275,7 @@
     body_format: json
     body:
       description: "Docker Runner"
-      tag_list: "docker,microservices"
+      tag_list: "docker,microservices,infra"
       run_untagged: true
       locked: false
       runner_type: "instance_type"
@@ -319,3 +319,52 @@
     "is already registered" not in runner_registration.stderr
   changed_when: runner_registration.rc == 0
   when: gitlab_runner_token is defined
+
+- name: Get Terraform project ID
+  uri:
+    url: "{{ gitlab_url }}/api/v4/projects?search=terraform"
+    method: GET
+    headers:
+      PRIVATE-TOKEN: "{{ gitlab_api_token }}"
+    status_code: 200
+    return_content: true
+  register: terraform_project
+  ignore_errors: yes
+
+- name: Set AWS credentials for Terraform project
+  uri:
+    url: "{{ gitlab_url }}/api/v4/projects/{{ terraform_project.json[0].id }}/variables"
+    method: POST
+    headers:
+      PRIVATE-TOKEN: "{{ gitlab_api_token }}"
+    body_format: json
+    body:
+      key: "{{ item.var_name }}"
+      value: "{{ item.var_value | to_json }}"
+      protected: "{{ item.protected | default(false) }}"
+      masked: "{{ item.masked | default(true) }}"
+    status_code: [201, 400]
+  with_items: "{{ global_vars }}"
+  register: terraform_vars_global
+  ignore_errors: yes
+  when: terraform_project is defined and terraform_project.json is defined and terraform_project.json | length > 0
+  no_log: true
+
+- name: Set Terraform variables for infrastructure project
+  uri:
+    url: "{{ gitlab_url }}/api/v4/projects/{{ terraform_project.json[0].id }}/variables"
+    method: POST
+    headers:
+      PRIVATE-TOKEN: "{{ gitlab_api_token }}"
+    body_format: json
+    body:
+      key: "{{ item.var_name }}"
+      value: "{{ item.var_value }}"
+      protected: "{{ item.protected | default(true) }}"
+      masked: "{{ item.masked | default(false) }}"
+    status_code: [201, 400]
+  with_items: "{{ terraform_vars }}"
+  register: terraform_vars_result
+  ignore_errors: yes
+  when: terraform_project is defined and terraform_project.json is defined and terraform_project.json | length > 0
+  no_log: true

@@ -15,8 +15,15 @@ services:
         registry['http_enabled'] = true
         registry['http_address'] = '0.0.0.0:5050'
         registry['https_enabled'] = false
-        # Configure GitLab to use less memory if needed
+        # Optimize
         postgresql['shared_buffers'] = "256MB"
+        postgresql['max_connections'] = 100
+        puma['worker_processes'] = 1
+        sidekiq['concurrency'] = 5
+        prometheus_monitoring['enable'] = false
+        alertmanager['enable'] = false
+        gitlab_exporter['enable'] = false
+        
     ports:
       - '80:80'
       - '8443:443'
