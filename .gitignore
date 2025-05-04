@@ -185,6 +185,7 @@ override.tf.json
 # Ignore CLI configuration files
 .terraformrc
 terraform.rc
+terraform/backend_config.hcl
 
 # Manifest files
 manifests/networking/api-gateway-ingress.yaml
