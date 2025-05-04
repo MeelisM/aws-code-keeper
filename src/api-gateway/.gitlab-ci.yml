@@ -72,7 +72,18 @@ build:
     paths:
       - node_modules/
       - package*.json
-      - "**/*"
+      - "*.js"
+      - "config/**/*.js"
+      - "routes/**/*.js"
+      - "test/**/*"
+      # For containerize job only
+      - "dockerfiles/**/*"
+      - "manifests/**/*"
+    expire_in: 1 hour
+    exclude:
+      - .git/
+      - .git/**/*
+  dependencies: []
 
 test:
   stage: test
@@ -84,13 +95,19 @@ test:
   artifacts:
     reports:
       junit: junit-test-results.xml
-  dependencies:
-    - build
+    expire_in: 1 week
+    exclude:
+      - .git/
+      - .git/**/*
+  needs:
+    - job: build
+      artifacts: true
 
 scan:
   stage: scan
   tags:
     - microservices
+  image: node:22
   script:
     - echo "Running code quality scan..."
     - npm install jshint --no-save
@@ -98,8 +115,12 @@ scan:
   artifacts:
     paths:
       - gl-code-quality-report.json
-  dependencies:
-    - build
+    exclude:
+      - .git/
+      - .git/**/*
+  needs:
+    - job: build
+      artifacts: true
   allow_failure: true
   only:
     - main
@@ -147,8 +168,12 @@ sast:
       - gl-sast-report.json
     reports:
       sast: gl-sast-report.json
-  dependencies:
-    - build
+    exclude:
+      - .git/
+      - .git/**/*
+  needs:
+    - job: build
+      artifacts: true
   allow_failure: true
   only:
     - main
@@ -194,8 +219,12 @@ containerize:
     - docker push ${BILLING_QUEUE_IMAGE} || echo "Push failed, may need to configure registry permissions"
     - docker tag ${BILLING_QUEUE_IMAGE} ${GITLAB_REGISTRY_URL}/root/api-gateway/billing-queue:latest
     - docker push ${GITLAB_REGISTRY_URL}/root/api-gateway/billing-queue:latest || echo "Push of latest tag failed"
-  dependencies:
-    - build
+  needs:
+    - job: build
+      artifacts: true
+    - job: test
+    - job: scan
+    - job: sast
   only:
     - main
 
@@ -316,8 +345,8 @@ deploy-prod:
   environment:
     name: production
     url: http://$SERVICE_URL
-  dependencies:
-    - containerize
+  needs:
+    - job: containerize
   when: manual
   only:
     - main

@@ -151,13 +151,15 @@ token
 
 # Terraform
 
-terraform/**/backend.tf 
 # Local .terraform directories
 **/.terraform/*
 
 # .tfstate files
 *.tfstate
 *.tfstate.*
+
+# Backend config files containing infrastructure details
+terraform/backend_config.hcl
 
 # Crash log files
 crash.log

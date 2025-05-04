@@ -88,13 +88,15 @@ build:
     paths:
       - node_modules/
       - package*.json
-      - "src/**/*"
-      - "app/**/*"
-      - "config/**/*"
+      - "app/**/*.js"
+      - "config/**/*.js"
+      - "*.js"
+      - "test/**/*"
+      # For containerize job only
       - "dockerfiles/**/*"
       - "manifests/**/*"
       - "scripts/**/*"
-      - "*.js"
+    expire_in: 1 hour
     exclude:
       - .git/
       - .git/**/*
@@ -109,13 +111,16 @@ test:
   artifacts:
     reports:
       junit: junit-test-results.xml
-  dependencies:
-    - build
+    expire_in: 1 week
+  needs:
+    - job: build
+      artifacts: true
 
 scan:
   stage: scan
   tags:
     - microservices
+  image: node:22
   script:
     - echo "Running code quality scan..."
     - npm install jshint --no-save
@@ -123,8 +128,12 @@ scan:
   artifacts:
     paths:
       - gl-code-quality-report.json
-  dependencies:
-    - build
+    exclude:
+      - .git/
+      - .git/**/*
+  needs:
+    - job: build
+      artifacts: true
   allow_failure: true
   only:
     - main
@@ -172,8 +181,12 @@ sast:
       - gl-sast-report.json
     reports:
       sast: gl-sast-report.json
-  dependencies:
-    - build
+    exclude:
+      - .git/
+      - .git/**/*
+  needs:
+    - job: build
+      artifacts: true
   allow_failure: true
   only:
     - main
@@ -194,33 +207,40 @@ containerize:
 
     - cd dockerfiles
 
+    # Try multiple authentication methods for GitLab registry
+    - echo "Logging in to GitLab Container Registry..."
+    # First try using GitLab CI token (recommended)
+    - echo -n "$CI_JOB_TOKEN" | docker login -u gitlab-ci-token --password-stdin $CI_REGISTRY
+    # If the first method fails, try using the environment variable as backup
+    - if [ $? -ne 0 ]; then docker login -u root -p "${GITLAB_REGISTRY_PASSWORD}" ${GITLAB_REGISTRY_URL} || echo "Both login methods failed but continuing anyway"; fi
+
     # Build and push Billing App image
-    - export BILLING_APP_IMAGE="${GITLAB_REGISTRY_URL}/root/billing-app:${CI_COMMIT_SHORT_SHA}"
+    - export BILLING_APP_IMAGE="${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
     - echo "Building Billing App image..."
     - docker build -t ${BILLING_APP_IMAGE} -f Dockerfile.billing-app ..
 
     # Build and push Billing Database image
-    - export BILLING_DB_IMAGE="${GITLAB_REGISTRY_URL}/root/billing-app/billing-db:${CI_COMMIT_SHORT_SHA}"
+    - export BILLING_DB_IMAGE="${CI_REGISTRY_IMAGE}/billing-db:${CI_COMMIT_SHORT_SHA}"
     - echo "Building Billing DB image..."
     - docker build -t ${BILLING_DB_IMAGE} -f Dockerfile.billing-db .
-
-    - echo "Logging in to GitLab Container Registry..."
-    - echo "Attempting Docker login to registry..."
-    - docker login -u root -p "${GITLAB_REGISTRY_PASSWORD}" ${GITLAB_REGISTRY_URL} || echo "Login failed but continuing anyway"
 
     # Push Billing App image
     - echo "Pushing Billing App image ${BILLING_APP_IMAGE}..."
     - docker push ${BILLING_APP_IMAGE} || echo "Push failed, may need to configure registry permissions"
-    - docker tag ${BILLING_APP_IMAGE} ${GITLAB_REGISTRY_URL}/root/billing-app:latest
-    - docker push ${GITLAB_REGISTRY_URL}/root/billing-app:latest || echo "Push of latest tag failed"
+    - docker tag ${BILLING_APP_IMAGE} ${CI_REGISTRY_IMAGE}:latest
+    - docker push ${CI_REGISTRY_IMAGE}:latest || echo "Push of latest tag failed"
 
     # Push Billing DB image
     - echo "Pushing Billing DB image ${BILLING_DB_IMAGE}..."
     - docker push ${BILLING_DB_IMAGE} || echo "Push failed, may need to configure registry permissions"
-    - docker tag ${BILLING_DB_IMAGE} ${GITLAB_REGISTRY_URL}/root/billing-app/billing-db:latest
-    - docker push ${GITLAB_REGISTRY_URL}/root/billing-app/billing-db:latest || echo "Push of latest tag failed"
-  dependencies:
-    - build
+    - docker tag ${BILLING_DB_IMAGE} ${CI_REGISTRY_IMAGE}/billing-db:latest
+    - docker push ${CI_REGISTRY_IMAGE}/billing-db:latest || echo "Push of latest tag failed"
+  needs:
+    - job: build
+      artifacts: true
+    - job: test
+    - job: scan
+    - job: sast
   only:
     - main
 

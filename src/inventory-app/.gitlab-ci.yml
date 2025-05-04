@@ -88,12 +88,15 @@ build:
     paths:
       - node_modules/
       - package*.json
-      - "models/**/*"
-      - "routes/**/*"
-      - "config/**/*"
+      - "models/**/*.js"
+      - "routes/**/*.js"
+      - "config/**/*.js"
+      - "*.js"
+      - "test/**/*"
+      # For containerize job only
       - "dockerfiles/**/*"
       - "manifests/**/*"
-      - "*.js"
+    expire_in: 1 hour
     exclude:
       - .git/
       - .git/**/*
@@ -107,13 +110,16 @@ test:
   artifacts:
     reports:
       junit: junit-test-results.xml
-  dependencies:
-    - build
+    expire_in: 1 week
+  needs:
+    - job: build
+      artifacts: true
 
 scan:
   stage: scan
   tags:
     - microservices
+  image: node:22
   script:
     - echo "Running code quality scan..."
     - npm install jshint --no-save
@@ -121,8 +127,12 @@ scan:
   artifacts:
     paths:
       - gl-code-quality-report.json
-  dependencies:
-    - build
+    exclude:
+      - .git/
+      - .git/**/*
+  needs:
+    - job: build
+      artifacts: true
   allow_failure: true
   only:
     - main
@@ -170,8 +180,12 @@ sast:
       - gl-sast-report.json
     reports:
       sast: gl-sast-report.json
-  dependencies:
-    - build
+    exclude:
+      - .git/
+      - .git/**/*
+  needs:
+    - job: build
+      artifacts: true
   allow_failure: true
   only:
     - main
@@ -192,33 +206,40 @@ containerize:
 
     - cd dockerfiles
 
+    # Try multiple authentication methods for GitLab registry
+    - echo "Logging in to GitLab Container Registry..."
+    # First try using GitLab CI token (recommended)
+    - echo -n "$CI_JOB_TOKEN" | docker login -u gitlab-ci-token --password-stdin $CI_REGISTRY
+    # If the first method fails, try using the environment variable as backup
+    - if [ $? -ne 0 ]; then docker login -u root -p "${GITLAB_REGISTRY_PASSWORD}" ${GITLAB_REGISTRY_URL} || echo "Both login methods failed but continuing anyway"; fi
+
     # Build and push Inventory App image
-    - export INVENTORY_APP_IMAGE="${GITLAB_REGISTRY_URL}/root/inventory-app:${CI_COMMIT_SHORT_SHA}"
+    - export INVENTORY_APP_IMAGE="${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
     - echo "Building Inventory App image..."
     - docker build -t ${INVENTORY_APP_IMAGE} -f Dockerfile.inventory-app ..
 
     # Build and push Inventory Database image
-    - export INVENTORY_DB_IMAGE="${GITLAB_REGISTRY_URL}/root/inventory-app/inventory-db:${CI_COMMIT_SHORT_SHA}"
+    - export INVENTORY_DB_IMAGE="${CI_REGISTRY_IMAGE}/inventory-db:${CI_COMMIT_SHORT_SHA}"
     - echo "Building Inventory DB image..."
     - docker build -t ${INVENTORY_DB_IMAGE} -f Dockerfile.inventory-db .
-
-    - echo "Logging in to GitLab Container Registry..."
-    - echo "Attempting Docker login to registry..."
-    - docker login -u root -p "${GITLAB_REGISTRY_PASSWORD}" ${GITLAB_REGISTRY_URL} || echo "Login failed but continuing anyway"
 
     # Push Inventory App image
     - echo "Pushing Inventory App image ${INVENTORY_APP_IMAGE}..."
     - docker push ${INVENTORY_APP_IMAGE} || echo "Push failed, may need to configure registry permissions"
-    - docker tag ${INVENTORY_APP_IMAGE} ${GITLAB_REGISTRY_URL}/root/inventory-app:latest
-    - docker push ${GITLAB_REGISTRY_URL}/root/inventory-app:latest || echo "Push of latest tag failed"
+    - docker tag ${INVENTORY_APP_IMAGE} ${CI_REGISTRY_IMAGE}:latest
+    - docker push ${CI_REGISTRY_IMAGE}:latest || echo "Push of latest tag failed"
 
     # Push Inventory DB image
     - echo "Pushing Inventory DB image ${INVENTORY_DB_IMAGE}..."
     - docker push ${INVENTORY_DB_IMAGE} || echo "Push failed, may need to configure registry permissions"
-    - docker tag ${INVENTORY_DB_IMAGE} ${GITLAB_REGISTRY_URL}/root/inventory-app/inventory-db:latest
-    - docker push ${GITLAB_REGISTRY_URL}/root/inventory-app/inventory-db:latest || echo "Push of latest tag failed"
-  dependencies:
-    - build
+    - docker tag ${INVENTORY_DB_IMAGE} ${CI_REGISTRY_IMAGE}/inventory-db:latest
+    - docker push ${CI_REGISTRY_IMAGE}/inventory-db:latest || echo "Push of latest tag failed"
+  needs:
+    - job: build
+      artifacts: true
+    - job: test
+    - job: scan
+    - job: sast
   only:
     - main
 
