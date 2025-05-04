@@ -16,7 +16,7 @@ spec:
       restartPolicy: Always
       containers:
         - name: postgres
-          image: orchestratorproject/billing-db:latest
+          image: ${GITLAB_REGISTRY_URL}/root/billing-app/billing-db:${CI_COMMIT_SHORT_SHA}
           ports:
             - containerPort: 5432
           env:

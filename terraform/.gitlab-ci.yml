@@ -85,12 +85,14 @@ variables:
     - cat ${STAGING_TF_VAR_FILE}
     - cat ${PRODUCTION_TF_VAR_FILE}
     - echo "Running terraform init in each job to ensure modules are available"
-    - terraform init \
-      -backend-config="bucket=code-keeper-terraform-state" \
-      -backend-config="key=terraform/${CI_PROJECT_NAME}/${CI_ENVIRONMENT_NAME:-default}/terraform.tfstate" \
-      -backend-config="region=${AWS_DEFAULT_REGION}" \
-      -backend-config="dynamodb_table=terraform-state-locks" \
-      -backend-config="encrypt=true"
+    - |
+      # Update backend config key with environment-specific path
+      sed -i "s|key            = \"terraform/state\"|key            = \"terraform/${CI_PROJECT_NAME}/${CI_ENVIRONMENT_NAME:-default}/terraform.tfstate\"|g" backend_config.hcl
+      # Update region if AWS_DEFAULT_REGION is set
+      if [ -n "${AWS_DEFAULT_REGION}" ]; then
+        sed -i "s|region         = \"eu-north-1\"|region         = \"${AWS_DEFAULT_REGION}\"|g" backend_config.hcl
+      fi
+    - terraform init -backend-config=backend_config.hcl
 
 # Initialize Terraform
 init:

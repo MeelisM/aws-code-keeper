@@ -1,4 +1,4 @@
-# Cloud Design Project
+# Code Keeper
 
 > **Project Focus**: This project demonstrates infrastructure as code using Terraform and AWS cloud services, specifically focused on deploying a microservices architecture to AWS EKS. The primary goal is to showcase cloud infrastructure design and deployment rather than local development.
 

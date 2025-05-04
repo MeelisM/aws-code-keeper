@@ -19,10 +19,10 @@
     "express": "^4.21.2",
     "pg": "^8.13.1",
     "pg-hstore": "^2.3.4",
-    "sequelize": "^6.37.5"
+    "sequelize": "^6.37.5",
+    "sequelize-cli": "^6.6.2"
   },
   "devDependencies": {
-    "morgan": "^1.10.0",
-    "sequelize-cli": "^6.6.2"
+    "morgan": "^1.10.0"
   }
 }
