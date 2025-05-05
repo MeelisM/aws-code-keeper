@@ -27,11 +27,11 @@ spec:
             [
               "sh",
               "-c",
-              "until nc -z -w 3 billing-queue 5672; do echo waiting for billing-queue; sleep 5; done;",
+              "echo 'Waiting for billing-queue service...' && until nc -z -v billing-queue.$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace).svc.cluster.local 5672 || nc -z -v billing-queue 5672; do echo 'waiting for billing-queue'; sleep 5; done; echo 'Connected to billing-queue successfully!'",
             ]
       containers:
         - name: api-gateway
-          image: "${DOCKER_HUB_REPO}/api-gateway-app:${CI_COMMIT_SHORT_SHA}"
+          image: "${DOCKER_HUB_REPO}/api-gateway:${CI_COMMIT_SHORT_SHA}"
           ports:
             - containerPort: 3000
           env:

@@ -13,14 +13,13 @@ spec:
       labels:
         app: inventory-db
     spec:
-      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
       containers:
         - name: postgres
           image: "${DOCKER_HUB_REPO}/inventory-db:${CI_COMMIT_SHORT_SHA}"
           ports:
             - containerPort: 5432
           env:
-            # PostgreSQL admin credentials
             - name: POSTGRES_USER
               valueFrom:
                 secretKeyRef:
@@ -33,7 +32,6 @@ spec:
                   key: POSTGRES_PASSWORD
             - name: POSTGRES_DB
               value: "postgres"
-            # Original variables for app compatibility
             - name: DB_USER
               valueFrom:
                 secretKeyRef:
@@ -52,6 +50,7 @@ spec:
           volumeMounts:
             - name: inventory-db-data
               mountPath: /var/lib/postgresql/data
+              subPath: postgres-data
           resources:
             requests:
               memory: "128Mi"
@@ -64,24 +63,14 @@ spec:
               port: 5432
             initialDelaySeconds: 30
             periodSeconds: 10
-            failureThreshold: 3
-            timeoutSeconds: 5
           readinessProbe:
             tcpSocket:
               port: 5432
             initialDelaySeconds: 15
             periodSeconds: 10
-            failureThreshold: 3
-            timeoutSeconds: 5
-  volumeClaimTemplates:
-    - metadata:
-        name: inventory-db-data
-      spec:
-        accessModes: ["ReadWriteOnce"]
-        resources:
-          requests:
-            storage: 100Mi
-        storageClassName: local-storage
+      volumes:
+        - name: inventory-db-data
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -95,24 +84,3 @@ spec:
     - protocol: TCP
       port: 5432
       targetPort: 5432
----
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: local-storage
-provisioner: kubernetes.io/no-provisioner
-volumeBindingMode: WaitForFirstConsumer
----
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: inventory-db-vol
-spec:
-  capacity:
-    storage: 100Mi
-  accessModes:
-    - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Delete
-  storageClassName: local-storage
-  hostPath:
-    path: /mnt/data/inventory

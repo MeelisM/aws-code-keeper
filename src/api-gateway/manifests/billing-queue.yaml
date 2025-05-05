@@ -63,34 +63,11 @@ spec:
               mountPath: /var/lib/rabbitmq
           resources:
             requests:
-              memory: "64Mi"
+              memory: "256Mi"
               cpu: "100m"
             limits:
-              memory: "128Mi"
+              memory: "512Mi"
               cpu: "200m"
-  volumeClaimTemplates:
-    - metadata:
-        name: billing-queue-data
-      spec:
-        accessModes: ["ReadWriteOnce"]
-        resources:
-          requests:
-            storage: 1Gi
-        storageClassName: local-storage
----
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: billing-queue-vol
-spec:
-  capacity:
-    storage: 1Gi
-  accessModes:
-    - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: local-storage
-  hostPath:
-    path: /mnt/data/rabbitmq
-  claimRef:
-    namespace: default
-    name: billing-queue-data-billing-queue-0
+      volumes:
+        - name: billing-queue-data
+          emptyDir: {}

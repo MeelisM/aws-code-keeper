@@ -230,42 +230,6 @@
   ignore_errors: yes
   when: inventory_service_project is defined and inventory_service_project.json is defined
 
-- name: Create CI/CD variable for GitLab Registry URL
-  uri:
-    url: "{{ gitlab_url }}/api/v4/admin/ci/variables"
-    method: POST
-    headers:
-      PRIVATE-TOKEN: "{{ gitlab_api_token }}"
-    body_format: json
-    body:
-      key: "GITLAB_REGISTRY_URL"
-      value: "{{ gitlab_registry_url }}"
-      protected: false
-      masked: false
-      variable_type: "env_var"
-    status_code: [201, 400]
-    validate_certs: "{{ gitlab_validate_certs }}"
-  ignore_errors: yes
-  register: create_registry_url_variable_result
-
-- name: Create CI/CD variable for GitLab Registry Password
-  uri:
-    url: "{{ gitlab_url }}/api/v4/admin/ci/variables"
-    method: POST
-    headers:
-      PRIVATE-TOKEN: "{{ gitlab_api_token }}"
-    body_format: json
-    body:
-      key: "GITLAB_REGISTRY_PASSWORD"
-      value: "{{ gitlab_registry_password }}"
-      protected: true
-      masked: true
-      variable_type: "env_var"
-    status_code: [201, 400]
-    validate_certs: "{{ gitlab_validate_certs }}"
-  ignore_errors: yes
-  register: create_registry_password_variable_result
-
 - name: Set Docker Hub credentials for API Gateway project
   uri:
     url: "{{ gitlab_url }}/api/v4/projects/{{ api_gateway_project.json[0].id }}/variables"
@@ -472,6 +436,16 @@
         value: "{{ global.DOCKER_HUB_PASSWORD }}",
         masked: true,
       }
+    - {
+        key: "AWS_STATE_BUCKET",
+        value: "{{ global.AWS_STATE_BUCKET }}",
+        masked: true,
+      }
+    - {
+        key: "CI_SERVER_URL",
+        value: "{{ global.CI_SERVER_URL }}",
+        masked: false,
+      }
   register: terraform_vars_global
   ignore_errors: yes
   when: terraform_project is defined and terraform_project.json is defined and terraform_project.json | length > 0
@@ -589,4 +563,136 @@
   register: terraform_vars_result
   ignore_errors: yes
   when: terraform_project is defined and terraform_project.json is defined and terraform_project.json | length > 0
+  no_log: true
+
+- name: Set global variables for API Gateway project
+  uri:
+    url: "{{ gitlab_url }}/api/v4/projects/{{ api_gateway_project.json[0].id }}/variables"
+    method: POST
+    headers:
+      PRIVATE-TOKEN: "{{ gitlab_api_token }}"
+    body_format: json
+    body:
+      key: "{{ item.key }}"
+      value: "{{ item.value }}"
+      protected: "{{ item.protected | default(false) }}"
+      masked: "{{ item.masked | default(true) }}"
+    status_code: [201, 400]
+  loop:
+    - {
+        key: "AWS_DEFAULT_REGION",
+        value: "{{ global.AWS_DEFAULT_REGION }}",
+        masked: false,
+      }
+    - {
+        key: "AWS_ACCESS_KEY_ID",
+        value: "{{ global.AWS_ACCESS_KEY_ID }}",
+        masked: true,
+      }
+    - {
+        key: "AWS_SECRET_ACCESS_KEY",
+        value: "{{ global.AWS_SECRET_ACCESS_KEY }}",
+        masked: true,
+      }
+    - {
+        key: "AWS_CLUSTER_NAME",
+        value: "{{ global.AWS_CLUSTER_NAME }}",
+        masked: false,
+      }
+    - {
+        key: "CI_SERVER_URL",
+        value: "{{ global.CI_SERVER_URL }}",
+        masked: false,
+      }
+  register: api_gateway_aws_vars
+  ignore_errors: yes
+  when: api_gateway_project is defined and api_gateway_project.json is defined
+  no_log: true
+
+- name: Set global variables for Billing Service project
+  uri:
+    url: "{{ gitlab_url }}/api/v4/projects/{{ billing_service_project.json[0].id }}/variables"
+    method: POST
+    headers:
+      PRIVATE-TOKEN: "{{ gitlab_api_token }}"
+    body_format: json
+    body:
+      key: "{{ item.key }}"
+      value: "{{ item.value }}"
+      protected: "{{ item.protected | default(false) }}"
+      masked: "{{ item.masked | default(true) }}"
+    status_code: [201, 400]
+  loop:
+    - {
+        key: "AWS_DEFAULT_REGION",
+        value: "{{ global.AWS_DEFAULT_REGION }}",
+        masked: false,
+      }
+    - {
+        key: "AWS_ACCESS_KEY_ID",
+        value: "{{ global.AWS_ACCESS_KEY_ID }}",
+        masked: true,
+      }
+    - {
+        key: "AWS_SECRET_ACCESS_KEY",
+        value: "{{ global.AWS_SECRET_ACCESS_KEY }}",
+        masked: true,
+      }
+    - {
+        key: "AWS_CLUSTER_NAME",
+        value: "{{ global.AWS_CLUSTER_NAME }}",
+        masked: false,
+      }
+    - {
+        key: "CI_SERVER_URL",
+        value: "{{ global.CI_SERVER_URL }}",
+        masked: false,
+      }
+  register: billing_service_aws_vars
+  ignore_errors: yes
+  when: billing_service_project is defined and billing_service_project.json is defined
+  no_log: true
+
+- name: Set global variables for Inventory Service project
+  uri:
+    url: "{{ gitlab_url }}/api/v4/projects/{{ inventory_service_project.json[0].id }}/variables"
+    method: POST
+    headers:
+      PRIVATE-TOKEN: "{{ gitlab_api_token }}"
+    body_format: json
+    body:
+      key: "{{ item.key }}"
+      value: "{{ item.value }}"
+      protected: "{{ item.protected | default(false) }}"
+      masked: "{{ item.masked | default(true) }}"
+    status_code: [201, 400]
+  loop:
+    - {
+        key: "AWS_DEFAULT_REGION",
+        value: "{{ global.AWS_DEFAULT_REGION }}",
+        masked: false,
+      }
+    - {
+        key: "AWS_ACCESS_KEY_ID",
+        value: "{{ global.AWS_ACCESS_KEY_ID }}",
+        masked: true,
+      }
+    - {
+        key: "AWS_SECRET_ACCESS_KEY",
+        value: "{{ global.AWS_SECRET_ACCESS_KEY }}",
+        masked: true,
+      }
+    - {
+        key: "AWS_CLUSTER_NAME",
+        value: "{{ global.AWS_CLUSTER_NAME }}",
+        masked: false,
+      }
+    - {
+        key: "CI_SERVER_URL",
+        value: "{{ global.CI_SERVER_URL }}",
+        masked: false,
+      }
+  register: inventory_service_aws_vars
+  ignore_errors: yes
+  when: inventory_service_project is defined and inventory_service_project.json is defined
   no_log: true

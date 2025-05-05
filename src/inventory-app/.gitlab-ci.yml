@@ -7,7 +7,6 @@ stages:
   - test
   - scan
   - containerize
-  - staging-approval
   - deploy-staging
   - approval
   - deploy-prod
@@ -39,17 +38,11 @@ variables:
     # Install kubectl
     - curl -LO "https://dl.k8s.io/release/v1.29.4/bin/linux/amd64/kubectl"
     - chmod +x kubectl && mv kubectl /usr/local/bin/
-    # Get common scripts from terraform repo
-    - git clone ${CI_SERVER_URL}/root/terraform.git || echo "Failed to clone terraform repo, will use local scripts if available"
-    # Use our CI configuration script
+    # Look for the local configure script
+    - ls -la scripts/
+    - echo "Using local kubectl configuration script"
     - |
-      if [ -f "terraform/scripts/ci-configure-kubectl.sh" ]; then
-        cp terraform/scripts/ci-configure-kubectl.sh ./ci-configure-kubectl.sh
-      elif [ -f "../terraform/scripts/ci-configure-kubectl.sh" ]; then
-        cp ../terraform/scripts/ci-configure-kubectl.sh ./ci-configure-kubectl.sh
-      fi
-    - |
-      chmod +x ./ci-configure-kubectl.sh || echo "Warning: Could not find kubectl configuration script"
+      chmod +x scripts/configure-kubectl.sh || echo "Warning: Could not make the kubectl configuration script executable"
 
 build:
   stage: build
@@ -61,8 +54,6 @@ build:
     - npm cache clean --force || true
     # Install all dependencies
     - npm ci
-    # Display installed packages for debugging
-    - npm list || true
 
     # Check for essential dependencies with proper error handling
     - echo "Checking for essential dependencies..."
@@ -136,7 +127,7 @@ scan:
     - microservices
   image: node:22
   script:
-    - echo "Running code quality scan..."
+    - echo "Running code quality scan"
     - npm install jshint --no-save
     - ./node_modules/.bin/jshint --extract=auto --exclude=node_modules ./ > gl-code-quality-report.json || echo "Code quality analysis completed with warnings"
   artifacts:
@@ -221,13 +212,6 @@ containerize:
 
     - cd dockerfiles
 
-    # Enhanced debugging for Docker Hub credentials
-    - echo "Checking for Docker Hub credentials..."
-    - |
-      echo "DOCKER_HUB_USERNAME defined: $(if [ -n "$DOCKER_HUB_USERNAME" ]; then echo 'YES'; else echo 'NO'; fi)"
-    - |
-      echo "DOCKER_HUB_PASSWORD defined: $(if [ -n "$DOCKER_HUB_PASSWORD" ]; then echo 'YES (length: ${#DOCKER_HUB_PASSWORD})'; else echo 'NO'; fi)"
-
     # Display Docker config directory
     - echo "Docker config directory:"
     - mkdir -p ~/.docker
@@ -308,16 +292,6 @@ containerize:
     reports:
       dotenv: build.env
 
-staging-approval:
-  stage: staging-approval
-  script:
-    - echo "Waiting for manual approval to deploy to staging environment"
-  environment:
-    name: staging-approval
-  when: manual
-  only:
-    - main
-
 deploy-staging:
   stage: deploy-staging
   tags:
@@ -326,10 +300,15 @@ deploy-staging:
   script:
     # Use our local script to configure kubectl instead of relying on external scripts
     - |
-      echo "Using local script to configure kubectl..."
+      echo "Using local script to configure kubectl"
       if [ -f "scripts/configure-kubectl.sh" ]; then
         chmod +x scripts/configure-kubectl.sh
-        ./scripts/configure-kubectl.sh --cluster-name cloud-design-cluster-staging --region ${AWS_DEFAULT_REGION:-eu-north-1} --environment ${STAGING_KUBE_NAMESPACE}
+        # Run with environment variables explicitly passed
+        AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}" \
+        AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}" \
+        AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION}" \
+        AWS_CLUSTER_NAME="${AWS_CLUSTER_NAME}" \
+        ./scripts/configure-kubectl.sh --environment ${STAGING_KUBE_NAMESPACE}
       else
         echo "ERROR: Could not find local configure-kubectl.sh script"
         exit 1
@@ -343,10 +322,10 @@ deploy-staging:
         --from-literal=DB_USER=${STAGING_INVENTORY_DB_USER} \
         --from-literal=DB_PASSWORD=${STAGING_INVENTORY_DB_PASSWORD} \
         --from-literal=DB_NAME=${STAGING_INVENTORY_DB_NAME} \
-        --from-literal=POSTGRES_PASSWORD=${STAGING_POSTGRES_PASSWORD} \
-        --from-literal=POSTGRES_USER=${STAGING_POSTGRES_USER} \
-        --from-literal=HOST=${STAGING_HOST} \
-        --from-literal=PORT=${STAGING_PORT} \
+        --from-literal=POSTGRES_PASSWORD=${STAGING_INVENTORY_POSTGRES_PASSWORD} \
+        --from-literal=POSTGRES_USER=${STAGING_INVENTORY_POSTGRES_USER} \
+        --from-literal=HOST=${STAGING_INVENTORY_HOST} \
+        --from-literal=PORT=${STAGING_INVENTORY_PORT} \
         -n ${STAGING_KUBE_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
     - kubectl get secret inventory-secrets -o yaml -n ${STAGING_KUBE_NAMESPACE}
     - echo "Deploying to staging environment on EKS"
@@ -358,33 +337,30 @@ deploy-staging:
     - sed -i "s|\${DOCKER_HUB_REPO}|${DOCKER_HUB_REPO}|g" manifests/inventory-db.yaml
     - sed -i "s|\${CI_COMMIT_SHORT_SHA}|${CI_COMMIT_SHORT_SHA}|g" manifests/inventory-db.yaml
 
-    # Apply the manifests (database first, then app)
+    # Apply the database manifests first
+    - echo "Deploying inventory database..."
+    - kubectl apply -f manifests/inventory-db.yaml -n ${STAGING_KUBE_NAMESPACE}
+
+    # Wait for the database to be ready
+    - echo "Waiting for inventory database to be ready..."
+    - kubectl rollout status statefulset/inventory-db -n ${STAGING_KUBE_NAMESPACE} --timeout=300s
+
+    # Delete the old StatefulSet without deleting the pods
+    - echo "Deleting old StatefulSet without deleting pods..."
+    - kubectl delete statefulset inventory-app -n ${STAGING_KUBE_NAMESPACE} --cascade=orphan || true
+
+    # Apply the new StatefulSet definition
+    - echo "Applying new StatefulSet and Service..."
     - kubectl apply -f manifests/inventory-db.yaml -n ${STAGING_KUBE_NAMESPACE}
     - kubectl apply -f manifests/inventory-app.yaml -n ${STAGING_KUBE_NAMESPACE}
-
-    # Add debugging information to see why pods are not starting
-    - echo "Checking pod status..."
-    - kubectl get pods -n ${STAGING_KUBE_NAMESPACE} -l app=inventory-app -o wide
-    - echo "Checking for events that might indicate problems..."
-    - kubectl get events -n ${STAGING_KUBE_NAMESPACE} --sort-by='.lastTimestamp' | grep inventory-app || true
-    - echo "Checking logs from previous pod if available..."
-    - POD_NAME=$(kubectl get pods -n ${STAGING_KUBE_NAMESPACE} -l app=inventory-app -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) || true
-    - if [ -n "$POD_NAME" ]; then kubectl logs $POD_NAME -n ${STAGING_KUBE_NAMESPACE} --previous || true; fi
 
     # Increase the timeout for the rollout
     - echo "Waiting for deployment to complete (10 minute timeout)..."
     - kubectl rollout status deployment/inventory-app -n ${STAGING_KUBE_NAMESPACE} --timeout=600s
-    # Get the ELB URL after deployment for environment URL
-    - >
-      export SERVICE_URL=$(kubectl get service inventory-app -n ${STAGING_KUBE_NAMESPACE} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-    - >-
-      echo "Service available at: $SERVICE_URL"
+
   environment:
     name: staging
-    url: http://$SERVICE_URL
   needs:
-    - job: staging-approval
-      artifacts: false
     - job: containerize
   only:
     - main
@@ -407,25 +383,34 @@ deploy-prod:
     - microservices
   extends: .k8s-setup
   script:
-    # Use our shared script to configure kubectl
+    # Use our local script to configure kubectl
     - |
-      if [ -f "./ci-configure-kubectl.sh" ]; then
-        ./ci-configure-kubectl.sh --cluster-name ${PROD_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION} --environment ${PROD_KUBE_NAMESPACE}
+      echo "Using local script to configure kubectl"
+      if [ -f "scripts/configure-kubectl.sh" ]; then
+        chmod +x scripts/configure-kubectl.sh
+        # Run with environment variables explicitly passed
+        AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}" \
+        AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}" \
+        AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-eu-north-1}" \
+        AWS_CLUSTER_NAME="${AWS_CLUSTER_NAME}" \
+        ./scripts/configure-kubectl.sh --environment ${PROD_KUBE_NAMESPACE}
       else
-        # Fallback if script not available
-        aws eks update-kubeconfig --name ${PROD_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION}
+        echo "ERROR: Could not find local configure-kubectl.sh script"
+        exit 1
       fi
 
     # Create Kubernetes secrets from GitLab CI variables
     - |
-      kubectl create secret generic inventory-app-secrets \
+      kubectl create secret generic inventory-secrets \
         --from-literal=DB_HOST=${PROD_INVENTORY_DB_HOST} \
         --from-literal=DB_PORT=${PROD_INVENTORY_DB_PORT} \
         --from-literal=DB_USER=${PROD_INVENTORY_DB_USER} \
         --from-literal=DB_PASSWORD=${PROD_INVENTORY_DB_PASSWORD} \
         --from-literal=DB_NAME=${PROD_INVENTORY_DB_NAME} \
-        --from-literal=HOST=0.0.0.0 \
-        --from-literal=PORT=3000 \
+        --from-literal=POSTGRES_PASSWORD=${PROD_INVENTORY_POSTGRES_PASSWORD} \
+        --from-literal=POSTGRES_USER=${PROD_INVENTORY_POSTGRES_USER} \
+        --from-literal=HOST=${PROD_INVENTORY_HOST} \
+        --from-literal=PORT=${PROD_INVENTORY_PORT} \
         -n ${PROD_KUBE_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
     - echo "Deploying to production environment on EKS"
     # Replace image placeholders in manifests
@@ -441,14 +426,9 @@ deploy-prod:
     - kubectl apply -f manifests/inventory-db.yaml -n ${PROD_KUBE_NAMESPACE}
     - kubectl apply -k manifests/ -n ${PROD_KUBE_NAMESPACE}
     - kubectl rollout status deployment/inventory-app -n ${PROD_KUBE_NAMESPACE} --timeout=300s
-    # Get the ELB URL after deployment
-    - >
-      export SERVICE_URL=$(kubectl get service inventory-app -n ${PROD_KUBE_NAMESPACE} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-    - >-
-      echo "Service available at: $SERVICE_URL"
+
   environment:
     name: production
-    url: http://$SERVICE_URL
   needs:
     - job: approval-prod
       artifacts: false

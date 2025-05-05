@@ -7,300 +7,268 @@ data "aws_iam_user" "cli_admin" {
   user_name = var.cli_admin_username
 }
 
-# ----------------
-# VPC Module Permissions
-# ----------------
+# Create an IAM group for admin users
+resource "aws_iam_group" "admin_group" {
+  name = "${var.environment}_${var.cli_admin_username}_admin_group"
+}
 
-# VPC permissions based on verified working policy
+# Add the CLI admin user to the admin group
+resource "aws_iam_user_group_membership" "admin_group_membership" {
+  user = data.aws_iam_user.cli_admin.user_name
+  groups = [
+    aws_iam_group.admin_group.name
+  ]
+}
+
+# VPC permissions
 resource "aws_iam_policy" "vpc_permissions" {
-  name        = "VPCModulePermissions"
+  name        = "${var.environment}_VPCModulePermissions"
   description = "Policy allowing necessary permissions for VPC module operations"
 
   policy = jsonencode({
     Version = "2012-10-17",
-    Statement = [
-      {
-        Sid    = "VisualEditor0",
-        Effect = "Allow",
-        Action = [
-          "ec2:CreateVpc",
-          "ec2:AllocateAddress",
-          "ec2:CreateTags",
-          "ec2:DescribeVpcs",
-          "ec2:DescribeAddresses",
-          "ec2:DescribeAddressesAttribute",
-          "ec2:DescribeVpcAttribute",
-          "ec2:DeleteVpc",
-          "ec2:ReleaseAddress",
-          "ec2:ModifyVpcAttribute",
-          "ec2:CreateInternetGateway",
-          "ec2:CreateSubnet",
-          "ec2:DeleteSubnet",
-          "ec2:AttachInternetGateway",
-          "ec2:DescribeSubnets",
-          "ec2:DescribeInternetGateways",
-          "ec2:DeleteInternetGateway",
-          "ec2:DescribeNetworkInterfaces",
-          "ec2:ModifySubnetAttribute",
-          "ec2:CreateRouteTable",
-          "ec2:CreateNatGateway",
-          "ec2:DescribeRouteTables",
-          "ec2:DeleteRouteTable",
-          "ec2:DescribeNatGateways",
-          "ec2:DeleteNatGateway",
-          "ec2:CreateRoute",
-          "ec2:DetachInternetGateway",
-          "ec2:DisassociateAddress",
-          "ec2:AssociateRouteTable",
-          "ec2:DisassociateRouteTable",
-          "ec2:DescribeInstances",
-          "ec2:DescribeVolumes",
-          "ec2:DescribeSecurityGroups",
-          "ec2:DescribeDhcpOptions",
-          "ec2:DescribeManagedPrefixLists",
-          "ec2:DescribeSpotPriceHistory",
-          "ec2:CreateSecurityGroup",
-          "ec2:RevokeSecurityGroupEgress",
-          "ec2:DeleteSecurityGroup",
-          "ec2:AuthorizeSecurityGroupEgress",
-          "ec2:DescribeRegions",
-          "ec2:DescribeSnapshots",
-          "ec2:DescribeImages",
-          "ec2:AuthorizeSecurityGroupIngress",
-          "ec2:DescribeSecurityGroupRules",
-          "ec2:RevokeSecurityGroupIngress"
-        ],
-        Resource = "*"
-      }
-    ]
+    Statement = [{
+      Effect = "Allow",
+      Action = [
+        "ec2:CreateVpc", "ec2:AllocateAddress", "ec2:CreateTags", "ec2:DescribeVpcs",
+        "ec2:DescribeAddresses", "ec2:DescribeAddressesAttribute", "ec2:DescribeVpcAttribute",
+        "ec2:DeleteVpc", "ec2:ReleaseAddress", "ec2:ModifyVpcAttribute", "ec2:CreateInternetGateway",
+        "ec2:CreateSubnet", "ec2:DeleteSubnet", "ec2:AttachInternetGateway", "ec2:DescribeSubnets",
+        "ec2:DescribeInternetGateways", "ec2:DeleteInternetGateway", "ec2:DescribeNetworkInterfaces",
+        "ec2:ModifySubnetAttribute", "ec2:CreateRouteTable", "ec2:CreateNatGateway", "ec2:DescribeRouteTables",
+        "ec2:DeleteRouteTable", "ec2:DescribeNatGateways", "ec2:DeleteNatGateway", "ec2:CreateRoute",
+        "ec2:DetachInternetGateway", "ec2:DisassociateAddress", "ec2:AssociateRouteTable",
+        "ec2:DisassociateRouteTable", "ec2:DescribeInstances", "ec2:DescribeVolumes",
+        "ec2:DescribeSecurityGroups", "ec2:DescribeDhcpOptions", "ec2:DescribeManagedPrefixLists",
+        "ec2:DescribeSpotPriceHistory", "ec2:CreateSecurityGroup", "ec2:RevokeSecurityGroupEgress",
+        "ec2:DeleteSecurityGroup", "ec2:AuthorizeSecurityGroupEgress", "ec2:DescribeRegions",
+        "ec2:DescribeSnapshots", "ec2:DescribeImages", "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:DescribeSecurityGroupRules", "ec2:RevokeSecurityGroupIngress"
+      ],
+      Resource = "*"
+    }]
   })
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
-# ----------------
-# EKS Module Permissions
-# ----------------
-
+# EKS permissions
 resource "aws_iam_policy" "eks_permissions" {
-  name        = "EKSModulePermissions"
+  name        = "${var.environment}_EKSModulePermissions"
   description = "Policy allowing necessary permissions for EKS module operations"
 
   policy = jsonencode({
     Version = "2012-10-17",
     Statement = [
       {
-        Sid    = "VisualEditor0",
         Effect = "Allow",
         Action = [
-          "eks:DescribeNodegroup",
-          "eks:CreateCluster",
-          "eks:DescribeCluster",
-          "eks:TagResource",
-          "eks:DeleteCluster",
-          "eks:ListClusters",
-          "eks:CreateNodegroup",
-          "eks:DeleteNodegroup",
+          "eks:DescribeNodegroup", "eks:CreateCluster", "eks:DescribeCluster",
+          "eks:TagResource", "eks:DeleteCluster", "eks:ListClusters",
+          "eks:CreateNodegroup", "eks:DeleteNodegroup"
         ],
         Resource = "*"
       },
       {
-        Sid    = "IAMForEKS",
         Effect = "Allow",
         Action = [
-          "iam:CreateRole",
-          "iam:DeleteRole",
-          "iam:GetRole",
-          "iam:PassRole",
-          "iam:ListRolePolicies",
-          "iam:ListAttachedRolePolicies",
-          "iam:AttachRolePolicy",
-          "iam:DetachRolePolicy",
-          "iam:PutRolePolicy",
-          "iam:DeleteRolePolicy",
-          "iam:CreateServiceLinkedRole",
-          "iam:CreateOpenIDConnectProvider",
-          "iam:GetOpenIDConnectProvider",
-          "iam:DeleteOpenIDConnectProvider",
-          "iam:TagOpenIDConnectProvider",
-          "iam:ListOpenIDConnectProviders",
+          "iam:CreateRole", "iam:DeleteRole", "iam:GetRole", "iam:PassRole",
+          "iam:ListRolePolicies", "iam:ListAttachedRolePolicies", "iam:AttachRolePolicy",
+          "iam:DetachRolePolicy", "iam:PutRolePolicy", "iam:DeleteRolePolicy",
+          "iam:CreateServiceLinkedRole", "iam:CreateOpenIDConnectProvider",
+          "iam:GetOpenIDConnectProvider", "iam:DeleteOpenIDConnectProvider",
+          "iam:TagOpenIDConnectProvider", "iam:ListOpenIDConnectProviders",
           "iam:ListInstanceProfilesForRole"
         ],
         Resource = "*"
       },
       {
-        Sid    = "AutoScalingForEKS",
         Effect = "Allow",
         Action = [
-          "autoscaling:CreateAutoScalingGroup",
-          "autoscaling:DeleteAutoScalingGroup",
-          "autoscaling:DescribeAutoScalingGroups",
-          "autoscaling:DescribeScalingActivities",
+          "autoscaling:CreateAutoScalingGroup", "autoscaling:DeleteAutoScalingGroup",
+          "autoscaling:DescribeAutoScalingGroups", "autoscaling:DescribeScalingActivities",
           "autoscaling:UpdateAutoScalingGroup"
         ],
         Resource = "*"
       }
     ]
   })
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
-# ----------------
-# ACM Module Permissions
-# ----------------
-
+# ACM permissions
 resource "aws_iam_policy" "acm_permissions" {
-  name        = "ACMModulePermissions"
+  name        = "${var.environment}_ACMModulePermissions"
   description = "Policy allowing necessary permissions for ACM module operations"
 
   policy = jsonencode({
     Version = "2012-10-17",
-    Statement = [
-      {
-        Sid    = "VisualEditor0",
-        Effect = "Allow",
-        Action = [
-          "acm:DescribeCertificate",
-          "acm:ImportCertificate",
-          "acm:AddTagsToCertificate",
-          "acm:ListTagsForCertificate",
-          "acm:DeleteCertificate",
-          "acm:RequestCertificate",
-          "acm:ListCertificates"
-        ],
-        Resource = "*"
-      }
-    ]
+    Statement = [{
+      Effect = "Allow",
+      Action = [
+        "acm:DescribeCertificate", "acm:ImportCertificate", "acm:AddTagsToCertificate",
+        "acm:ListTagsForCertificate", "acm:DeleteCertificate", "acm:RequestCertificate",
+        "acm:ListCertificates"
+      ],
+      Resource = "*"
+    }]
   })
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
-# ----------------
-# Tag Resources Permission
-# ----------------
-
+# Tag permissions
 resource "aws_iam_policy" "tag_permissions" {
-  name        = "TagResourcePermissions"
+  name        = "${var.environment}_TagResourcePermissions"
   description = "Policy allowing tag operations needed by various modules"
 
   policy = jsonencode({
     Version = "2012-10-17",
-    Statement = [
-      {
-        Sid      = "VisualEditor0",
-        Effect   = "Allow",
-        Action   = "tag:GetResources",
-        Resource = "*"
-      }
-    ]
+    Statement = [{
+      Effect   = "Allow",
+      Action   = "tag:GetResources",
+      Resource = "*"
+    }]
   })
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
-# ----------------
-# CloudWatch Permission
-# ----------------
-
+# CloudWatch permissions
 resource "aws_iam_policy" "cloudwatch_permissions" {
-  name        = "CloudWatchPermissions"
+  name        = "${var.environment}_CloudWatchPermissions"
   description = "Policy allowing necessary permissions for CloudWatch module operations"
 
   policy = jsonencode({
     Version = "2012-10-17",
     Statement = [
       {
-        Sid    = "CloudWatchDashboardPerms",
         Effect = "Allow",
         Action = [
-          "cloudwatch:GetDashboard",
-          "cloudwatch:DeleteDashboards",
-          "cloudwatch:PutMetricData",
-          "cloudwatch:GetMetricStatistics",
-          "cloudwatch:ListMetrics",
-          "cloudwatch:GetMetricData",
-          "cloudwatch:PutDashboard",
-          "cloudwatch:ListDashboards",
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents",
-          "logs:DescribeLogStreams"
+          "cloudwatch:GetDashboard", "cloudwatch:DeleteDashboards", "cloudwatch:PutMetricData",
+          "cloudwatch:GetMetricStatistics", "cloudwatch:ListMetrics", "cloudwatch:GetMetricData",
+          "cloudwatch:PutDashboard", "cloudwatch:ListDashboards", "logs:CreateLogGroup",
+          "logs:CreateLogStream", "logs:PutLogEvents", "logs:DescribeLogStreams"
         ],
         Resource = "*"
       },
       {
-        Sid    = "EKSAddonPerms",
         Effect = "Allow",
         Action = [
-          "eks:DescribeAddon",
-          "eks:CreateAddon",
-          "eks:DeleteAddon",
-          "eks:UpdateAddon",
-          "eks:ListAddons",
-          "eks:DescribeCluster"
+          "eks:DescribeAddon", "eks:CreateAddon", "eks:DeleteAddon",
+          "eks:UpdateAddon", "eks:ListAddons", "eks:DescribeCluster"
         ],
         Resource = "*"
       }
     ]
   })
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
-# ----------------
-# Policy Attachments
-# ----------------
-
-# Attach VPC policy to CLI admin user
-resource "aws_iam_user_policy_attachment" "cli_admin_vpc" {
-  user       = data.aws_iam_user.cli_admin.user_name
+# Attach policies to group
+resource "aws_iam_group_policy_attachment" "admin_group_vpc" {
+  group      = aws_iam_group.admin_group.name
   policy_arn = aws_iam_policy.vpc_permissions.arn
+  lifecycle { create_before_destroy = true }
 }
 
-# Attach EKS policy to CLI admin user
-resource "aws_iam_user_policy_attachment" "cli_admin_eks" {
-  user       = data.aws_iam_user.cli_admin.user_name
+resource "aws_iam_group_policy_attachment" "admin_group_eks" {
+  group      = aws_iam_group.admin_group.name
   policy_arn = aws_iam_policy.eks_permissions.arn
+  lifecycle { create_before_destroy = true }
 }
 
-# Attach ACM policy to CLI admin user
-resource "aws_iam_user_policy_attachment" "cli_admin_acm" {
-  user       = data.aws_iam_user.cli_admin.user_name
+resource "aws_iam_group_policy_attachment" "admin_group_acm" {
+  group      = aws_iam_group.admin_group.name
   policy_arn = aws_iam_policy.acm_permissions.arn
+  lifecycle { create_before_destroy = true }
 }
 
-# Attach Tag policy to CLI admin user
-resource "aws_iam_user_policy_attachment" "cli_admin_tag" {
-  user       = data.aws_iam_user.cli_admin.user_name
+resource "aws_iam_group_policy_attachment" "admin_group_tag" {
+  group      = aws_iam_group.admin_group.name
   policy_arn = aws_iam_policy.tag_permissions.arn
+  lifecycle { create_before_destroy = true }
 }
 
-# Attach CloudWatch policy to CLI admin user
-resource "aws_iam_user_policy_attachment" "cli_admin_cloudwatch" {
-  user       = data.aws_iam_user.cli_admin.user_name
+resource "aws_iam_group_policy_attachment" "admin_group_cloudwatch" {
+  group      = aws_iam_group.admin_group.name
   policy_arn = aws_iam_policy.cloudwatch_permissions.arn
+  lifecycle { create_before_destroy = true }
 }
 
-# ----------------
-# Wait for IAM Policy Propagation
-# ----------------
-
-# Create a null resource that waits for IAM policies to propagate
+# Wait for IAM propagation
 resource "null_resource" "wait_for_iam_propagation" {
   depends_on = [
-    aws_iam_user_policy_attachment.cli_admin_vpc,
-    aws_iam_user_policy_attachment.cli_admin_eks,
-    aws_iam_user_policy_attachment.cli_admin_acm,
-    aws_iam_user_policy_attachment.cli_admin_tag,
-    aws_iam_user_policy_attachment.cli_admin_cloudwatch
+    aws_iam_group_policy_attachment.admin_group_vpc,
+    aws_iam_group_policy_attachment.admin_group_eks,
+    aws_iam_group_policy_attachment.admin_group_acm,
+    aws_iam_group_policy_attachment.admin_group_tag,
+    aws_iam_group_policy_attachment.admin_group_cloudwatch,
+    aws_iam_user_group_membership.admin_group_membership
   ]
 
   provisioner "local-exec" {
-    command = "echo 'IAM policies have been created. Waiting for 30 seconds for policy propagation...' && sleep 30"
+    command = "echo 'IAM policies have been created. Waiting 30s for propagation...' && sleep 30"
   }
 }
 
-# Create another null resource to ensure IAM policies are destroyed last
-resource "null_resource" "iam_destroyer" {
-  provisioner "local-exec" {
-    command = "echo 'All resources destroyed. Now will destroy IAM policies.'"
-    when    = destroy
+# Detach policies before destroy
+resource "null_resource" "detach_policies" {
+  triggers = {
+    destroy_marker = "detach_on_destroy"
+    group_name     = aws_iam_group.admin_group.name
+    vpc_policy     = aws_iam_policy.vpc_permissions.arn
+    eks_policy     = aws_iam_policy.eks_permissions.arn
+    acm_policy     = aws_iam_policy.acm_permissions.arn
+    tag_policy     = aws_iam_policy.tag_permissions.arn
+    cw_policy      = aws_iam_policy.cloudwatch_permissions.arn
   }
 
-  # This ensures the IAM policies are destroyed after all other resources
+  provisioner "local-exec" {
+    when    = destroy
+    command = <<-EOT
+      echo 'Detaching IAM policies from group before destroying...'
+      aws iam detach-group-policy --group-name "${self.triggers.group_name}" --policy-arn "${self.triggers.vpc_policy}" || echo "VPC policy already detached"
+      aws iam detach-group-policy --group-name "${self.triggers.group_name}" --policy-arn "${self.triggers.eks_policy}" || echo "EKS policy already detached"
+      aws iam detach-group-policy --group-name "${self.triggers.group_name}" --policy-arn "${self.triggers.acm_policy}" || echo "ACM policy already detached"
+      aws iam detach-group-policy --group-name "${self.triggers.group_name}" --policy-arn "${self.triggers.tag_policy}" || echo "Tag policy already detached"
+      aws iam detach-group-policy --group-name "${self.triggers.group_name}" --policy-arn "${self.triggers.cw_policy}" || echo "CloudWatch policy already detached"
+
+      echo 'Waiting 10 seconds for detachment to propagate...'
+      sleep 10
+    EOT
+  }
+
   depends_on = [
+    aws_iam_group_policy_attachment.admin_group_vpc,
+    aws_iam_group_policy_attachment.admin_group_eks,
+    aws_iam_group_policy_attachment.admin_group_acm,
+    aws_iam_group_policy_attachment.admin_group_tag,
+    aws_iam_group_policy_attachment.admin_group_cloudwatch
+  ]
+}
+
+# Final destroy step
+resource "null_resource" "iam_destroyer" {
+  provisioner "local-exec" {
+    when    = destroy
+    command = "echo 'All IAM resources are now destroyed.'"
+  }
+
+  depends_on = [
+    null_resource.detach_policies,
     null_resource.wait_for_iam_propagation
   ]
 }

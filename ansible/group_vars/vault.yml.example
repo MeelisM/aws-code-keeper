@@ -73,7 +73,8 @@ global:
   AWS_SECRET_ACCESS_KEY: key_goes_here # masked
   DOCKER_HUB_USERNAME: username
   DOCKER_HUB_PASSWORD: password # masked
-  DOCKER_HUB_REPO: repositoryName
+  DOCKER_HUB_REPO: repository_name
+  AWS_STATE_BUCKET: your-terraform-state-bucket
 
 terraform:
   common:

@@ -13,6 +13,7 @@ stages:
 variables:
   STAGING_TF_VAR_FILE: terraform-staging.tfvars
   PRODUCTION_TF_VAR_FILE: terraform-production.tfvars
+  TF_ROOT: ${CI_PROJECT_DIR}/terraform
 
 # Common setup that runs before all jobs
 .terraform-setup:
@@ -22,6 +23,37 @@ variables:
   before_script:
     - apk add --no-cache bash jq curl sed
     - terraform --version
+    # Create backend_config.hcl from the example
+    - |
+      echo "Creating backend_config.hcl from example file..."
+      if [ -f "backend_config.hcl.example" ]; then
+        # Copy the example file as a starting point
+        cp backend_config.hcl.example backend_config.hcl
+        
+        # Update the bucket name from environment variable
+        if [ -n "${AWS_STATE_BUCKET}" ]; then
+          sed -i "s|bucket         = \"your-terraform-state-bucket\"|bucket         = \"${AWS_STATE_BUCKET}\"|g" backend_config.hcl
+        else
+          echo "WARNING: AWS_STATE_BUCKET environment variable not set, using default from example"
+        fi
+        
+        # Update region if AWS_DEFAULT_REGION is set
+        if [ -n "${AWS_DEFAULT_REGION}" ]; then
+          sed -i "s|region         = \"eu-north-1\"|region         = \"${AWS_DEFAULT_REGION}\"|g" backend_config.hcl
+        fi
+        
+        # Update key with environment-specific path
+        sed -i "s|key            = \"terraform/state\"|key            = \"terraform/${CI_PROJECT_NAME}/${CI_ENVIRONMENT_NAME:-default}/terraform.tfstate\"|g" backend_config.hcl
+        
+        # Keep use_lockfile and encrypt as they are (true)
+      else
+        echo "ERROR: backend_config.hcl.example not found! Cannot create configuration."
+        exit 1
+      fi
+
+    - echo "Content of generated backend_config.hcl:"
+    - cat backend_config.hcl
+
     - echo "Creating tfvars files dynamically from environment variables..."
 
     # Fix for JSON arrays that come in as strings with escaped quotes
@@ -81,17 +113,7 @@ variables:
       max_capacity        = ${TF_VAR_PROD_max_capacity}
       EOF
 
-    - echo "Tfvars files created:"
-    - cat ${STAGING_TF_VAR_FILE}
-    - cat ${PRODUCTION_TF_VAR_FILE}
-    - echo "Running terraform init in each job to ensure modules are available"
-    - |
-      # Update backend config key with environment-specific path
-      sed -i "s|key            = \"terraform/state\"|key            = \"terraform/${CI_PROJECT_NAME}/${CI_ENVIRONMENT_NAME:-default}/terraform.tfstate\"|g" backend_config.hcl
-      # Update region if AWS_DEFAULT_REGION is set
-      if [ -n "${AWS_DEFAULT_REGION}" ]; then
-        sed -i "s|region         = \"eu-north-1\"|region         = \"${AWS_DEFAULT_REGION}\"|g" backend_config.hcl
-      fi
+    - echo "Running terraform init with backend config"
     - terraform init -backend-config=backend_config.hcl
 
 # Initialize Terraform
@@ -100,10 +122,11 @@ init:
   extends: .terraform-setup
   script:
     - echo "Initializing Terraform..."
-    - terraform state list || echo "No state exists yet or not accessible"
+    - terraform state list || echo "No state exists yet or not accessible. If it is a new project, this is expected."
   artifacts:
     paths:
       - .terraform.lock.hcl
+      - backend_config.hcl
       - ${STAGING_TF_VAR_FILE}
       - ${PRODUCTION_TF_VAR_FILE}
     expire_in: 1 week
@@ -126,6 +149,7 @@ validate:
   artifacts:
     paths:
       - potential_secrets.txt
+      - backend_config.hcl
     when: on_failure
     expire_in: 1 week
 
@@ -150,11 +174,14 @@ plan-staging:
     - terraform show -no-color staging.tfplan > staging-plan-output.txt
   artifacts:
     paths:
+      - backend_config.hcl
       - staging.tfplan
       - staging-plan-output.txt
     expire_in: 1 week
   environment:
     name: staging
+  dependencies:
+    - init
 
 # Apply changes to staging
 apply-staging:
@@ -167,13 +194,50 @@ apply-staging:
     - terraform workspace select staging || terraform workspace new staging
     - terraform apply -auto-approve staging.tfplan
     - terraform output -json > terraform-output-staging.json
+
+    # Install kubectl to apply the generated Ingress manifest
+    - echo "Installing kubectl to apply Ingress manifest..."
+    - apk add --no-cache curl
+    - curl -LO "https://dl.k8s.io/release/v1.29.4/bin/linux/amd64/kubectl"
+    - chmod +x kubectl && mv kubectl /usr/local/bin/
+
+    # Install AWS CLI using Alpine's package manager
+    - echo "Installing AWS CLI"
+    - apk add --no-cache aws-cli
+    - aws --version
+
+    # Configure kubectl using AWS credentials and environment variables
+    - |
+      echo "Configuring kubectl for EKS cluster"
+      # Use environment variable directly instead of terraform output
+      CLUSTER_NAME="${TF_VAR_STAGING_cluster_name}"
+      echo "Using EKS cluster name: $CLUSTER_NAME"
+      aws eks update-kubeconfig --name $CLUSTER_NAME --region ${AWS_DEFAULT_REGION}
+
+    # Apply the generated Ingress manifest
+    - |
+      echo "Applying generated API Gateway Ingress manifest to staging environment"
+      PROCESSED_INGRESS_PATH="../manifests/networking/api-gateway-ingress.yaml"
+      if [ -f "$PROCESSED_INGRESS_PATH" ]; then
+        echo "Found processed Ingress manifest at $PROCESSED_INGRESS_PATH"
+        kubectl apply -f $PROCESSED_INGRESS_PATH -n staging
+        echo "Ingress applied successfully!"
+      else
+        echo "ERROR: Processed Ingress manifest not found at expected path: $PROCESSED_INGRESS_PATH"
+        # Try to find it using the terraform output if available
+        INGRESS_PATH=$(terraform output -raw api_gateway_ingress_path 2>/dev/null || echo "")
+        if [ -n "$INGRESS_PATH" ] && [ -f "$INGRESS_PATH" ]; then
+          echo "Found Ingress manifest using terraform output at $INGRESS_PATH"
+          kubectl apply -f $INGRESS_PATH -n staging
+          echo "Ingress applied successfully!!!"
+        else
+          echo "WARNING: Could not find processed Ingress manifest. Ingress not applied."
+        fi
+      fi
   artifacts:
     paths:
       - terraform-output-staging.json
-      - .terraform
-      - terraform.tfstate
-      - terraform.tfstate.backup
-      - terraform.tfstate.d/
+      - backend_config.hcl
     expire_in: 1 week
   environment:
     name: staging
@@ -221,6 +285,47 @@ apply-prod:
     - terraform apply -auto-approve production.tfplan
     # Export outputs for later use
     - terraform output -json > terraform-output-production.json
+
+    # Install kubectl to apply the generated Ingress manifest
+    - echo "Installing kubectl to apply Ingress manifest..."
+    - apk add --no-cache curl
+    - curl -LO "https://dl.k8s.io/release/v1.29.4/bin/linux/amd64/kubectl"
+    - chmod +x kubectl && mv kubectl /usr/local/bin/
+
+    # Install AWS CLI using Alpine's package manager
+    - echo "Installing AWS CLI..."
+    - apk add --no-cache aws-cli
+    - aws --version
+
+    # Configure kubectl using AWS credentials and environment variables
+    - |
+      echo "Configuring kubectl for EKS cluster..."
+      # Use environment variable directly instead of terraform output
+      CLUSTER_NAME="${TF_VAR_PROD_cluster_name}"
+      echo "Using EKS cluster name: $CLUSTER_NAME"
+      aws eks update-kubeconfig --name $CLUSTER_NAME --region ${AWS_DEFAULT_REGION}
+
+    # Apply the generated Ingress manifest
+    - |
+      echo "Applying generated API Gateway Ingress manifest to production environment..."
+      PROCESSED_INGRESS_PATH="../manifests/networking/api-gateway-ingress.yaml"
+      if [ -f "$PROCESSED_INGRESS_PATH" ]; then
+        echo "Found processed Ingress manifest at $PROCESSED_INGRESS_PATH"
+        kubectl apply -f $PROCESSED_INGRESS_PATH -n production
+        echo "Ingress applied successfully!"
+      else
+        echo "ERROR: Processed Ingress manifest not found at expected path: $PROCESSED_INGRESS_PATH"
+        # Try to find it using the terraform output if available
+        INGRESS_PATH=$(terraform output -raw api_gateway_ingress_path 2>/dev/null || echo "")
+        if [ -n "$INGRESS_PATH" ] && [ -f "$INGRESS_PATH" ]; then
+          echo "Found Ingress manifest using terraform output at $INGRESS_PATH"
+          kubectl apply -f $INGRESS_PATH -n production
+          echo "Ingress applied successfully!"
+        else
+          echo "WARNING: Could not find processed Ingress manifest. Ingress not applied."
+        fi
+      fi
+
     # Tagging successful deployments
     - |
       if [ -n "${CI_COMMIT_TAG}" ]; then
@@ -233,6 +338,7 @@ apply-prod:
   artifacts:
     paths:
       - terraform-output-production.json
+      - backend_config.hcl
       - deploy-version.txt
     expire_in: 4 weeks
   environment:
@@ -247,11 +353,9 @@ apply-prod:
 cleanup-staging:
   stage: apply-staging
   extends: .terraform-setup
-  dependencies:
-    - apply-staging # Changed from 'init' to 'apply-staging' to get state files
   script:
     - |
-      echo "WARNING: This will DESTROY all resources in the staging environment!"
+      echo "WARNING: This will DESTROY all resources in the staging environment!!!"
     - terraform workspace select staging || terraform workspace new staging
     - |
       if [ -f "${STAGING_TF_VAR_FILE}" ]; then
@@ -270,11 +374,9 @@ cleanup-staging:
 cleanup-prod:
   stage: apply-prod
   extends: .terraform-setup
-  dependencies:
-    - apply-prod # Changed from 'init' to 'apply-prod' to get state files
   script:
     - |
-      echo "WARNING: This will DESTROY all resources in the production environment!"
+      echo "WARNING: This will DESTROY all resources in the production environment"
     - terraform workspace select production || terraform workspace new production
     - |
       if [ -f "${PRODUCTION_TF_VAR_FILE}" ]; then

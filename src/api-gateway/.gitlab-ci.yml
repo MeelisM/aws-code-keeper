@@ -7,7 +7,6 @@ stages:
   - test
   - scan
   - containerize
-  - staging-approval
   - deploy-staging
   - approval
   - deploy-prod
@@ -39,17 +38,11 @@ variables:
     # Install kubectl
     - curl -LO "https://dl.k8s.io/release/v1.29.4/bin/linux/amd64/kubectl"
     - chmod +x kubectl && mv kubectl /usr/local/bin/
-    # Get common scripts from terraform repo
-    - git clone ${CI_SERVER_URL}/root/terraform.git || echo "Failed to clone terraform repo, will use local scripts if available"
-    # Use our CI configuration script
+    # Look for the local configure script
+    - ls -la scripts/
+    - echo "Using local kubectl configuration script"
     - |
-      if [ -f "terraform/scripts/ci-configure-kubectl.sh" ]; then
-        cp terraform/scripts/ci-configure-kubectl.sh ./ci-configure-kubectl.sh
-      elif [ -f "../terraform/scripts/ci-configure-kubectl.sh" ]; then
-        cp ../terraform/scripts/ci-configure-kubectl.sh ./ci-configure-kubectl.sh
-      fi
-    - |
-      chmod +x ./ci-configure-kubectl.sh || echo "Warning: Could not find kubectl configuration script"
+      chmod +x scripts/configure-kubectl.sh || echo "Warning: Could not make the kubectl configuration script executable"
 
 build:
   stage: build
@@ -93,6 +86,7 @@ build:
       # For containerize job only
       - "dockerfiles/**/*"
       - "manifests/**/*"
+      - "scripts/**/*"
     expire_in: 1 hour
     exclude:
       - .git/
@@ -123,7 +117,7 @@ scan:
     - microservices
   image: node:22
   script:
-    - echo "Running code quality scan..."
+    - echo "Running code quality scan"
     - npm install jshint --no-save
     - ./node_modules/.bin/jshint --extract=auto --exclude=node_modules ./ > gl-code-quality-report.json || echo "Code quality analysis completed with warnings"
   artifacts:
@@ -203,36 +197,90 @@ containerize:
     DOCKER_HOST: unix:///var/run/docker.sock
     DOCKER_TLS_CERTDIR: ""
   script:
-    - echo "Setting up Docker environment"
+    - echo "Setting up Docker environment .."
     - docker info || { echo "Docker not available"; exit 1; }
 
     - cd dockerfiles
 
-    # Build and push API Gateway image
-    - export API_GATEWAY_IMAGE="${GITLAB_REGISTRY_URL}/root/api-gateway:${CI_COMMIT_SHORT_SHA}"
+    # Display Docker config directory
+    - echo "Docker config directory:"
+    - mkdir -p ~/.docker
+    - ls -la ~/.docker || echo "No Docker config directory found"
+
+    # Clear any existing Docker authentication configurations to avoid conflicts
+    - echo "Removing any existing Docker config..."
+    - rm -f ~/.docker/config.json || echo "No Docker config to remove"
+
+    # Clean Docker Hub credentials of whitespace
+    - echo "Processing credentials to remove whitespace..."
+    - |
+      export DOCKER_HUB_USERNAME=$(echo -n "$DOCKER_HUB_USERNAME" | tr -d '\r\n\t ')
+      export DOCKER_HUB_PASSWORD=$(echo -n "$DOCKER_HUB_PASSWORD" | tr -d '\r\n\t ')
+
+    # Log in to Docker Hub with simple error handling
+    - echo "Logging in to Docker Hub..."
+    - |
+      if [ -z "$DOCKER_HUB_USERNAME" ] || [ -z "$DOCKER_HUB_PASSWORD" ]; then
+        echo "ERROR: Docker Hub credentials not found! Make sure DOCKER_HUB_USERNAME and DOCKER_HUB_PASSWORD are set in CI/CD variables."
+        exit 1
+      fi
+
+    # Single login attempt
+    - echo "Attempting login to Docker Hub."
+    - |
+      echo "$DOCKER_HUB_PASSWORD" | docker login docker.io -u "$DOCKER_HUB_USERNAME" --password-stdin || {
+        echo "Docker login failed. Please verify credentials.";
+        exit 1;
+      }
+
+    # Show Docker config after login (hiding password)
+    - echo "Docker config after login:"
+    - |
+      if [ -f ~/.docker/config.json ]; then
+        cat ~/.docker/config.json | grep -v auth | grep -v "https://index.docker.io/v1/"
+      else
+        echo "No Docker config file was created after login"
+      fi
+
+    # Define image names with sanitized username for Docker tag compatibility
+    - |
+      if [ -z "$DOCKER_HUB_REPO" ]; then
+        echo "ERROR: DOCKER_HUB_REPO variable not found! Make sure it is set in CI/CD variables."
+        exit 1
+      fi
+
+      # Export the repository variables to be used in subsequent steps
+      export API_GATEWAY_IMAGE="${DOCKER_HUB_REPO}/api-gateway:${CI_COMMIT_SHORT_SHA}"
+      export BILLING_QUEUE_IMAGE="${DOCKER_HUB_REPO}/billing-queue:${CI_COMMIT_SHORT_SHA}"
+
+      echo "Using Docker repository: $DOCKER_HUB_REPO"
+      echo "API_GATEWAY_IMAGE: $API_GATEWAY_IMAGE"
+      echo "BILLING_QUEUE_IMAGE: $BILLING_QUEUE_IMAGE"
+
+    # Build API Gateway Image
     - echo "Building API Gateway image..."
     - docker build -t ${API_GATEWAY_IMAGE} -f Dockerfile.api-gateway ..
+    - docker tag ${API_GATEWAY_IMAGE} ${DOCKER_HUB_REPO}/api-gateway:latest
 
-    # Build and push Billing Queue image (part of the api-gateway repository)
-    - export BILLING_QUEUE_IMAGE="${GITLAB_REGISTRY_URL}/root/api-gateway/billing-queue:${CI_COMMIT_SHORT_SHA}"
+    # Build Billing Queue image
     - echo "Building Billing Queue image..."
     - docker build -t ${BILLING_QUEUE_IMAGE} -f Dockerfile.billing-queue .
+    - docker tag ${BILLING_QUEUE_IMAGE} ${DOCKER_HUB_REPO}/billing-queue:latest
 
-    - echo "Logging in to GitLab Container Registry..."
-    - echo "Attempting Docker login to registry..."
-    - echo "${GITLAB_REGISTRY_PASSWORD}" | docker login -u root --password-stdin ${GITLAB_REGISTRY_URL} || echo "Login failed but continuing anyway"
+    # Push to Docker Hub
+    - echo "Pushing images to Docker Hub..."
+    - docker push ${API_GATEWAY_IMAGE}
+    - docker push ${BILLING_QUEUE_IMAGE}
+    - docker push ${DOCKER_HUB_REPO}/api-gateway:latest
+    - docker push ${DOCKER_HUB_REPO}/billing-queue:latest
 
-    # Push API Gateway image
-    - echo "Pushing API Gateway image ${API_GATEWAY_IMAGE}..."
-    - docker push ${API_GATEWAY_IMAGE} || echo "Push failed, may need to configure registry permissions"
-    - docker tag ${API_GATEWAY_IMAGE} ${GITLAB_REGISTRY_URL}/root/api-gateway:latest
-    - docker push ${GITLAB_REGISTRY_URL}/root/api-gateway:latest || echo "Push of latest tag failed"
-
-    # Push Billing Queue image
-    - echo "Pushing Billing Queue image ${BILLING_QUEUE_IMAGE}..."
-    - docker push ${BILLING_QUEUE_IMAGE} || echo "Push failed, may need to configure registry permissions"
-    - docker tag ${BILLING_QUEUE_IMAGE} ${GITLAB_REGISTRY_URL}/root/api-gateway/billing-queue:latest
-    - docker push ${GITLAB_REGISTRY_URL}/root/api-gateway/billing-queue:latest || echo "Push of latest tag failed"
+    # Save Docker Hub image names in environment for later stages
+    - cd ..
+    - echo "DOCKERHUB_API_GATEWAY_IMAGE=${API_GATEWAY_IMAGE}" >> build.env
+    - echo "DOCKERHUB_BILLING_QUEUE_IMAGE=${BILLING_QUEUE_IMAGE}" >> build.env
+  artifacts:
+    reports:
+      dotenv: build.env
   needs:
     - job: build
       artifacts: true
@@ -242,65 +290,79 @@ containerize:
   only:
     - main
 
-staging-approval:
-  stage: staging-approval
-  script:
-    - echo "Waiting for manual approval to deploy to staging environment"
-  environment:
-    name: staging-approval
-  when: manual
-  only:
-    - main
-
 deploy-staging:
   stage: deploy-staging
   tags:
     - microservices
   extends: .k8s-setup
   script:
-    # Use the TF_VAR_STAGING_cluster_name variable from GitLab CI/CD variables
+    # Use our local script to configure kubectl instead of relying on external scripts
     - |
-      echo "Configuring kubectl to connect to the staging EKS cluster..."
-      aws eks update-kubeconfig --name ${TF_VAR_STAGING_cluster_name} --region ${AWS_DEFAULT_REGION:-eu-north-1}
+      echo "Using local script to configure kubectl"
+      if [ -f "scripts/configure-kubectl.sh" ]; then
+        chmod +x scripts/configure-kubectl.sh
+        # Run with environment variables explicitly passed
+        AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}" \
+        AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}" \
+        AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-eu-north-1}" \
+        AWS_CLUSTER_NAME="${AWS_CLUSTER_NAME}" \
+        ./scripts/configure-kubectl.sh --environment ${STAGING_KUBE_NAMESPACE}
+      else
+        echo "ERROR: Could not find local configure-kubectl.sh script"
+        exit 1
+      fi
 
     # Create Kubernetes secrets from GitLab CI variables - mapping from prefixed to app variables
     - |
       kubectl create secret generic api-gateway-secrets \
-        --from-literal=RABBITMQ_HOST=${STAGING_RABBITMQ_HOST} \
-        --from-literal=RABBITMQ_PORT=${STAGING_RABBITMQ_PORT} \
-        --from-literal=RABBITMQ_USER=${STAGING_RABBITMQ_USER} \
-        --from-literal=RABBITMQ_PASSWORD=${STAGING_RABBITMQ_PASSWORD} \
-        --from-literal=RABBITMQ_QUEUE=${STAGING_RABBITMQ_QUEUE} \
-        --from-literal=RABBITMQ_API_URL=${STAGING_RABBITMQ_API_URL} \
-        --from-literal=HOST=0.0.0.0 \
-        --from-literal=PORT=3000 \
-        --from-literal=INVENTORY_URL=${STAGING_INVENTORY_URL} \
+        --from-literal=RABBITMQ_HOST=${STAGING_API_RABBITMQ_HOST} \
+        --from-literal=RABBITMQ_PORT=${STAGING_API_RABBITMQ_PORT} \
+        --from-literal=RABBITMQ_USER=${STAGING_API_RABBITMQ_USER} \
+        --from-literal=RABBITMQ_PASSWORD=${STAGING_API_RABBITMQ_PASSWORD} \
+        --from-literal=RABBITMQ_QUEUE=${STAGING_API_RABBITMQ_QUEUE} \
+        --from-literal=RABBITMQ_API_URL=${STAGING_API_RABBITMQ_API_URL} \
+        --from-literal=INVENTORY_URL=${STAGING_API_INVENTORY_URL} \
+        --from-literal=HOST=${STAGING_API_GATEWAY_HOST} \
+        --from-literal=PORT=${STAGING_API_GATEWAY_PORT} \
         -n ${STAGING_KUBE_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+    - kubectl get secret api-gateway-secrets -o yaml -n ${STAGING_KUBE_NAMESPACE}
     - echo "Deploying to staging environment on EKS"
-    # Replace image placeholders in manifests
-    - sed -i "s|IMAGE_REPO|${GITLAB_REGISTRY_URL}/root/api-gateway|g" manifests/api-gateway-app.yaml
-    - sed -i "s|IMAGE_TAG|${CI_COMMIT_SHORT_SHA}|g" manifests/api-gateway-app.yaml
 
-    # Replace billing-queue image variables
-    - sed -i "s|\${GITLAB_REGISTRY_URL}|${GITLAB_REGISTRY_URL}|g" manifests/billing-queue.yaml
+    # Apply Kubernetes manifests individually instead of using kustomize
+    - echo "Applying Kubernetes manifests individually."
+    # Replace Docker Hub image variables in manifests
+    - sed -i "s|\${DOCKER_HUB_REPO}|${DOCKER_HUB_REPO}|g" manifests/api-gateway-app.yaml
+    - sed -i "s|\${CI_COMMIT_SHORT_SHA}|${CI_COMMIT_SHORT_SHA}|g" manifests/api-gateway-app.yaml
+    - sed -i "s|\${DOCKER_HUB_REPO}|${DOCKER_HUB_REPO}|g" manifests/billing-queue.yaml
     - sed -i "s|\${CI_COMMIT_SHORT_SHA}|${CI_COMMIT_SHORT_SHA}|g" manifests/billing-queue.yaml
 
-    # Apply Kubernetes manifests
-    - kubectl apply -f manifests/api-gateway-app.yaml -n ${STAGING_KUBE_NAMESPACE}
+    # Apply the PVCs and PVs first
+    - echo "Creating PVC and PV for billing queue..."
+    # First delete the old PV if it exists
+    - kubectl delete pv billing-queue-vol --ignore-not-found=true
+    # Apply just the PVC first to ensure it exists
+    - kubectl apply -f manifests/billing-queue.yaml -n ${STAGING_KUBE_NAMESPACE} -l "kind=pvc" || true
+    # Update the PV manifest to include the correct namespace in the claimRef
+    - sed -i "s|__KUBE_NAMESPACE__|${STAGING_KUBE_NAMESPACE}|g" manifests/billing-queue.yaml
+    # Now apply the PV
+    - kubectl apply -f manifests/billing-queue.yaml -n ${STAGING_KUBE_NAMESPACE} -l "kind=pv" || true
+
+    # Delete the old StatefulSet without deleting the pods
+    - echo "Deleting old StatefulSet without deleting pods..."
+    - kubectl delete statefulset billing-queue -n ${STAGING_KUBE_NAMESPACE} --cascade=orphan || true
+
+    # Apply the new StatefulSet definition
+    - echo "Applying new StatefulSet and Service..."
     - kubectl apply -f manifests/billing-queue.yaml -n ${STAGING_KUBE_NAMESPACE}
-    - kubectl apply -k manifests/ -n ${STAGING_KUBE_NAMESPACE}
+    - kubectl apply -f manifests/api-gateway-app.yaml -n ${STAGING_KUBE_NAMESPACE}
+
+    # Increase the timeout for the rollout
+    - echo "Waiting for deployment to complete (5 minute timeout)..."
     - kubectl rollout status deployment/api-gateway-app -n ${STAGING_KUBE_NAMESPACE} --timeout=300s
-    # Get the ELB URL after deployment for environment URL
-    - >
-      export SERVICE_URL=$(kubectl get service api-gateway-app -n ${STAGING_KUBE_NAMESPACE} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-    - >-
-      echo "Service available at: $SERVICE_URL"
+
   environment:
     name: staging
-    url: http://$SERVICE_URL
   needs:
-    - job: staging-approval
-      artifacts: false
     - job: containerize
   only:
     - main
@@ -323,50 +385,69 @@ deploy-prod:
     - microservices
   extends: .k8s-setup
   script:
-    # Use our shared script to configure kubectl
+    # Use our local script to configure kubectl
     - |
-      if [ -f "./ci-configure-kubectl.sh" ]; then
-        ./ci-configure-kubectl.sh --cluster-name ${PROD_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION} --environment ${PROD_KUBE_NAMESPACE}
+      echo "Using local script to configure kubectl"
+      if [ -f "scripts/configure-kubectl.sh" ]; then
+        chmod +x scripts/configure-kubectl.sh
+        # Run with environment variables explicitly passed
+        AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}" \
+        AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}" \
+        AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-eu-north-1}" \
+        AWS_CLUSTER_NAME="${AWS_CLUSTER_NAME}" \
+        ./scripts/configure-kubectl.sh --environment ${PROD_KUBE_NAMESPACE}
       else
-        # Fallback if script not available
-        aws eks update-kubeconfig --name ${PROD_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION}
+        echo "ERROR: Could not find local configure-kubectl.sh script"
+        exit 1
       fi
 
     # Create Kubernetes secrets from GitLab CI variables - mapping from prefixed to app variables
     - |
       kubectl create secret generic api-gateway-secrets \
-        --from-literal=RABBITMQ_HOST=${PROD_RABBITMQ_HOST} \
-        --from-literal=RABBITMQ_PORT=${PROD_RABBITMQ_PORT} \
-        --from-literal=RABBITMQ_USER=${PROD_RABBITMQ_USER} \
-        --from-literal=RABBITMQ_PASSWORD=${PROD_RABBITMQ_PASSWORD} \
-        --from-literal=RABBITMQ_QUEUE=${PROD_RABBITMQ_QUEUE} \
-        --from-literal=RABBITMQ_API_URL=${PROD_RABBITMQ_API_URL} \
-        --from-literal=HOST=0.0.0.0 \
-        --from-literal=PORT=3000 \
-        --from-literal=INVENTORY_URL=${PROD_INVENTORY_URL} \
+        --from-literal=RABBITMQ_HOST=${PROD_API_RABBITMQ_HOST} \
+        --from-literal=RABBITMQ_PORT=${PROD_API_RABBITMQ_PORT} \
+        --from-literal=RABBITMQ_USER=${PROD_API_RABBITMQ_USER} \
+        --from-literal=RABBITMQ_PASSWORD=${PROD_API_RABBITMQ_PASSWORD} \
+        --from-literal=RABBITMQ_QUEUE=${PROD_API_RABBITMQ_QUEUE} \
+        --from-literal=RABBITMQ_API_URL=${PROD_API_RABBITMQ_API_URL} \
+        --from-literal=INVENTORY_URL=${PROD_API_INVENTORY_URL} \
+        --from-literal=HOST=${PROD_API_GATEWAY_HOST} \
+        --from-literal=PORT=${PROD_API_GATEWAY_PORT} \
         -n ${PROD_KUBE_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+    - kubectl get secret api-gateway-secrets -o yaml -n ${PROD_KUBE_NAMESPACE}
     - echo "Deploying to production environment on EKS"
-    # Replace image placeholders in manifests
-    - sed -i "s|IMAGE_REPO|${GITLAB_REGISTRY_URL}/root/api-gateway|g" manifests/api-gateway-app.yaml
-    - sed -i "s|IMAGE_TAG|${CI_COMMIT_SHORT_SHA}|g" manifests/api-gateway-app.yaml
 
-    # Replace billing-queue image variables
-    - sed -i "s|\${GITLAB_REGISTRY_URL}|${GITLAB_REGISTRY_URL}|g" manifests/billing-queue.yaml
+    # Apply Kubernetes manifests individually instead of using kustomize
+    - echo "Applying Kubernetes manifests individually..."
+    # Replace Docker Hub image variables in manifests
+    - sed -i "s|\${DOCKER_HUB_REPO}|${DOCKER_HUB_REPO}|g" manifests/api-gateway-app.yaml
+    - sed -i "s|\${CI_COMMIT_SHORT_SHA}|${CI_COMMIT_SHORT_SHA}|g" manifests/api-gateway-app.yaml
+    - sed -i "s|\${DOCKER_HUB_REPO}|${DOCKER_HUB_REPO}|g" manifests/billing-queue.yaml
     - sed -i "s|\${CI_COMMIT_SHORT_SHA}|${CI_COMMIT_SHORT_SHA}|g" manifests/billing-queue.yaml
 
-    # Apply Kubernetes manifests
-    - kubectl apply -f manifests/api-gateway-app.yaml -n ${PROD_KUBE_NAMESPACE}
+    # Apply the PVCs and PVs first
+    - echo "Creating PVC and PV for billing queue..."
+    # First delete the old PV if it exists
+    - kubectl delete pv billing-queue-vol --ignore-not-found=true
+    # Apply just the PVC first to ensure it exists
+    - kubectl apply -f manifests/billing-queue.yaml -n ${PROD_KUBE_NAMESPACE} -l "kind=pvc" || true
+    # Update the PV manifest to include the correct namespace in the claimRef
+    - sed -i "s|__KUBE_NAMESPACE__|${PROD_KUBE_NAMESPACE}|g" manifests/billing-queue.yaml
+    # Now apply the PV
+    - kubectl apply -f manifests/billing-queue.yaml -n ${PROD_KUBE_NAMESPACE} -l "kind=pv" || true
+
+    # Delete the old StatefulSet without deleting the pods
+    - echo "Deleting old StatefulSet without deleting pods..."
+    - kubectl delete statefulset billing-queue -n ${PROD_KUBE_NAMESPACE} --cascade=orphan || true
+
+    # Apply the new StatefulSet definition
+    - echo "Applying new StatefulSet and Service..."
     - kubectl apply -f manifests/billing-queue.yaml -n ${PROD_KUBE_NAMESPACE}
-    - kubectl apply -k manifests/ -n ${PROD_KUBE_NAMESPACE}
+    - kubectl apply -f manifests/api-gateway-app.yaml -n ${PROD_KUBE_NAMESPACE}
     - kubectl rollout status deployment/api-gateway-app -n ${PROD_KUBE_NAMESPACE} --timeout=300s
-    # Get the ELB URL after deployment
-    - >
-      export SERVICE_URL=$(kubectl get service api-gateway-app -n ${PROD_KUBE_NAMESPACE} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-    - >-
-      echo "Service available at: $SERVICE_URL"
+
   environment:
     name: production
-    url: http://$SERVICE_URL
   needs:
     - job: approval-prod
       artifacts: false

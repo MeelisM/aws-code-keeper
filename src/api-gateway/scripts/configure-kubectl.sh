@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# Default values
+# Default values - now using AWS_CLUSTER_NAME if set, otherwise fallback to default
 CLUSTER_NAME="${AWS_CLUSTER_NAME}"
 REGION="${AWS_DEFAULT_REGION}"
 ENVIRONMENT="${STAGING_KUBE_NAMESPACE:-staging}"

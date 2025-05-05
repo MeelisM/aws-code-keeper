@@ -7,7 +7,6 @@ stages:
   - test
   - scan
   - containerize
-  - staging-approval
   - deploy-staging
   - approval
   - deploy-prod
@@ -39,17 +38,11 @@ variables:
     # Install kubectl
     - curl -LO "https://dl.k8s.io/release/v1.29.4/bin/linux/amd64/kubectl"
     - chmod +x kubectl && mv kubectl /usr/local/bin/
-    # Get common scripts from terraform repo
-    - git clone ${CI_SERVER_URL}/root/terraform.git || echo "Failed to clone terraform repo, will use local scripts if available"
-    # Use our CI configuration script
+    # Look for the local configure script
+    - ls -la scripts/
+    - echo "Using local kubectl configuration script"
     - |
-      if [ -f "terraform/scripts/ci-configure-kubectl.sh" ]; then
-        cp terraform/scripts/ci-configure-kubectl.sh ./ci-configure-kubectl.sh
-      elif [ -f "../terraform/scripts/ci-configure-kubectl.sh" ]; then
-        cp ../terraform/scripts/ci-configure-kubectl.sh ./ci-configure-kubectl.sh
-      fi
-    - |
-      chmod +x ./ci-configure-kubectl.sh || echo "Warning: Could not find kubectl configuration script"
+      chmod +x scripts/configure-kubectl.sh || echo "Warning: Could not make the kubectl configuration script executable"
 
 build:
   stage: build
@@ -61,8 +54,6 @@ build:
     - npm cache clean --force || true
     # Install all dependencies
     - npm ci
-    # Display installed packages for debugging
-    - npm list || true
 
     # Check for essential dependencies with proper error handling
     - echo "Checking for essential dependencies..."
@@ -91,7 +82,7 @@ build:
         fi
       }
 
-    # Check for critical modules
+    # Check for critical modules (only production dependencies)
     - check_module "express" || exit 1
     - check_module "sequelize" || exit 1
     - check_module "pg" || exit 1
@@ -221,52 +212,85 @@ containerize:
 
     - cd dockerfiles
 
-    # Try multiple authentication methods for GitLab registry
-    - echo "Logging in to GitLab Container Registry..."
-    # First try using GitLab CI token (recommended)
-    - echo "$CI_JOB_TOKEN" | docker login -u gitlab-ci-token --password-stdin $CI_REGISTRY
-    # If the first method fails, try using the environment variable as backup
-    - if [ $? -ne 0 ]; then echo "${GITLAB_REGISTRY_PASSWORD}" | docker login -u root --password-stdin ${GITLAB_REGISTRY_URL} || echo "Both login methods failed but continuing anyway"; fi
+    # Display Docker config directory
+    - echo "Docker config directory:"
+    - mkdir -p ~/.docker
+    - ls -la ~/.docker || echo "No Docker config directory found"
 
-    # Build and push Billing App image
-    - export BILLING_APP_IMAGE="${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
+    # Clear any existing Docker authentication configurations to avoid conflicts
+    - echo "Removing any existing Docker config..."
+    - rm -f ~/.docker/config.json || echo "No Docker config to remove"
+
+    # Clean Docker Hub credentials of whitespace
+    - echo "Processing credentials to remove whitespace..."
+    - |
+      export DOCKER_HUB_USERNAME=$(echo -n "$DOCKER_HUB_USERNAME" | tr -d '\r\n\t ')
+      export DOCKER_HUB_PASSWORD=$(echo -n "$DOCKER_HUB_PASSWORD" | tr -d '\r\n\t ')
+
+    # Log in to Docker Hub with simple error handling
+    - echo "Logging in to Docker Hub..."
+    - |
+      if [ -z "$DOCKER_HUB_USERNAME" ] || [ -z "$DOCKER_HUB_PASSWORD" ]; then
+        echo "ERROR: Docker Hub credentials not found! Make sure DOCKER_HUB_USERNAME and DOCKER_HUB_PASSWORD are set in CI/CD variables."
+        exit 1
+      fi
+
+    # Single login attempt
+    - echo "Attempting login to Docker Hub."
+    - |
+      echo "$DOCKER_HUB_PASSWORD" | docker login docker.io -u "$DOCKER_HUB_USERNAME" --password-stdin || {
+        echo "Docker login failed. Please verify credentials.";
+        exit 1;
+      }
+
+    # Show Docker config after login (hiding password)
+    - echo "Docker config after login:"
+    - |
+      if [ -f ~/.docker/config.json ]; then
+        cat ~/.docker/config.json | grep -v auth | grep -v "https://index.docker.io/v1/"
+      else
+        echo "No Docker config file was created after login"
+      fi
+
+    # Define image names with sanitized username for Docker tag compatibility
+    - |
+      if [ -z "$DOCKER_HUB_REPO" ]; then
+        echo "ERROR: DOCKER_HUB_REPO variable not found! Make sure it is set in CI/CD variables."
+        exit 1
+      fi
+
+      # Export the repository variables to be used in subsequent steps
+      export APP_IMAGE="${DOCKER_HUB_REPO}/billing-app:${CI_COMMIT_SHORT_SHA}"
+      export DB_IMAGE="${DOCKER_HUB_REPO}/billing-db:${CI_COMMIT_SHORT_SHA}"
+
+      echo "Using Docker repository: $DOCKER_HUB_REPO"
+      echo "APP_IMAGE: $APP_IMAGE"
+      echo "DB_IMAGE: $DB_IMAGE"
+
+    # Build Billing App image
     - echo "Building Billing App image..."
-    - docker build -t ${BILLING_APP_IMAGE} -f Dockerfile.billing-app ..
+    - docker build -t ${APP_IMAGE} -f Dockerfile.billing-app ..
+    - docker tag ${APP_IMAGE} ${DOCKER_HUB_REPO}/billing-app:latest
 
-    # Build and push Billing Database image
-    - export BILLING_DB_IMAGE="${CI_REGISTRY_IMAGE}/billing-db:${CI_COMMIT_SHORT_SHA}"
-    - echo "Building Billing DB image..."
-    - docker build -t ${BILLING_DB_IMAGE} -f Dockerfile.billing-db .
+    # Build Billing Database image
+    - echo "Building Billing DB image"
+    - docker build -t ${DB_IMAGE} -f Dockerfile.billing-db .
+    - docker tag ${DB_IMAGE} ${DOCKER_HUB_REPO}/billing-db:latest
 
-    # Push Billing App image
-    - echo "Pushing Billing App image ${BILLING_APP_IMAGE}..."
-    - docker push ${BILLING_APP_IMAGE} || echo "Push failed, may need to configure registry permissions"
-    - docker tag ${BILLING_APP_IMAGE} ${CI_REGISTRY_IMAGE}:latest
-    - docker push ${CI_REGISTRY_IMAGE}:latest || echo "Push of latest tag failed"
+    # Push to Docker Hub
+    - echo "Pushing images to Docker Hub..."
+    - docker push ${APP_IMAGE}
+    - docker push ${DB_IMAGE}
+    - docker push ${DOCKER_HUB_REPO}/billing-app:latest
+    - docker push ${DOCKER_HUB_REPO}/billing-db:latest
 
-    # Push Billing DB image
-    - echo "Pushing Billing DB image ${BILLING_DB_IMAGE}..."
-    - docker push ${BILLING_DB_IMAGE} || echo "Push failed, may need to configure registry permissions"
-    - docker tag ${BILLING_DB_IMAGE} ${CI_REGISTRY_IMAGE}/billing-db:latest
-    - docker push ${CI_REGISTRY_IMAGE}/billing-db:latest || echo "Push of latest tag failed"
-  needs:
-    - job: build
-      artifacts: true
-    - job: test
-    - job: scan
-    - job: sast
-  only:
-    - main
-
-staging-approval:
-  stage: staging-approval
-  script:
-    - echo "Waiting for manual approval to deploy to staging environment"
-  environment:
-    name: staging-approval
-  when: manual
-  only:
-    - main
+    # Save Docker Hub image names in environment for later stages
+    - cd ..
+    - echo "DOCKERHUB_BILLING_APP_IMAGE=${APP_IMAGE}" >> build.env
+    - echo "DOCKERHUB_BILLING_DB_IMAGE=${DB_IMAGE}" >> build.env
+  artifacts:
+    reports:
+      dotenv: build.env
 
 deploy-staging:
   stage: deploy-staging
@@ -274,51 +298,74 @@ deploy-staging:
     - microservices
   extends: .k8s-setup
   script:
-    # Use our shared script to configure kubectl
+    # Use our local script to configure kubectl instead of relying on external scripts
     - |
-      if [ -f "./ci-configure-kubectl.sh" ]; then
-        ./ci-configure-kubectl.sh --cluster-name ${STAGING_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION} --environment ${STAGING_KUBE_NAMESPACE}
+      echo "Using local script to configure kubectl..."
+      if [ -f "scripts/configure-kubectl.sh" ]; then
+        chmod +x scripts/configure-kubectl.sh
+        # Run with environment variables explicitly passed
+        AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}" \
+        AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}" \
+        AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-eu-north-1}" \
+        AWS_CLUSTER_NAME="${AWS_CLUSTER_NAME}" \
+        ./scripts/configure-kubectl.sh --environment ${STAGING_KUBE_NAMESPACE}
       else
-        # Fallback if script not available
-        aws eks update-kubeconfig --name ${STAGING_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION}
+        echo "ERROR: Could not find local configure-kubectl.sh script"
+        exit 1
       fi
 
     # Create Kubernetes secrets from GitLab CI variables
     - |
-      kubectl create secret generic billing-app-secrets \
+      kubectl create secret generic billing-secrets \
         --from-literal=DB_HOST=${STAGING_BILLING_DB_HOST} \
         --from-literal=DB_PORT=${STAGING_BILLING_DB_PORT} \
         --from-literal=DB_USER=${STAGING_BILLING_DB_USER} \
         --from-literal=DB_PASSWORD=${STAGING_BILLING_DB_PASSWORD} \
         --from-literal=DB_NAME=${STAGING_BILLING_DB_NAME} \
-        --from-literal=HOST=0.0.0.0 \
-        --from-literal=PORT=3000 \
+        --from-literal=POSTGRES_PASSWORD=${STAGING_BILLING_POSTGRES_PASSWORD} \
+        --from-literal=POSTGRES_USER=${STAGING_BILLING_POSTGRES_USER} \
+        --from-literal=RABBITMQ_API_URL=${STAGING_BILLING_RABBITMQ_API_URL} \
+        --from-literal=RABBITMQ_PORT=${STAGING_BILLING_RABBITMQ_PORT} \
+        --from-literal=RABBITMQ_USER=${STAGING_BILLING_RABBITMQ_USER} \
+        --from-literal=RABBITMQ_PASSWORD=${STAGING_BILLING_RABBITMQ_PASSWORD} \
+        --from-literal=RABBITMQ_QUEUE=${STAGING_BILLING_RABBITMQ_QUEUE} \
+        --from-literal=HOST=${STAGING_BILLING_HOST} \
+        --from-literal=PORT=${STAGING_BILLING_PORT} \
         -n ${STAGING_KUBE_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+    - kubectl get secret billing-secrets -o yaml -n ${STAGING_KUBE_NAMESPACE}
     - echo "Deploying to staging environment on EKS"
-    # Replace image placeholders in manifests
-    - sed -i "s|IMAGE_REPO|${GITLAB_REGISTRY_URL}/root/billing-app|g" manifests/billing-app.yaml
-    - sed -i "s|IMAGE_TAG|${CI_COMMIT_SHORT_SHA}|g" manifests/billing-app.yaml
-
-    # Replace billing-db image variables
-    - sed -i "s|\${GITLAB_REGISTRY_URL}|${GITLAB_REGISTRY_URL}|g" manifests/billing-db.yaml
+    # Apply Kubernetes manifests individually instead of using kustomize
+    - echo "Applying Kubernetes manifests individually..."
+    # Replace Docker Hub image variables in manifests
+    - sed -i "s|\${DOCKER_HUB_REPO}|${DOCKER_HUB_REPO}|g" manifests/billing-app.yaml
+    - sed -i "s|\${CI_COMMIT_SHORT_SHA}|${CI_COMMIT_SHORT_SHA}|g" manifests/billing-app.yaml
+    - sed -i "s|\${DOCKER_HUB_REPO}|${DOCKER_HUB_REPO}|g" manifests/billing-db.yaml
     - sed -i "s|\${CI_COMMIT_SHORT_SHA}|${CI_COMMIT_SHORT_SHA}|g" manifests/billing-db.yaml
 
-    # Apply Kubernetes manifests
-    - kubectl apply -f manifests/billing-app.yaml -n ${STAGING_KUBE_NAMESPACE}
+    # Apply the database manifests first
+    - echo "Deploying billing database..."
     - kubectl apply -f manifests/billing-db.yaml -n ${STAGING_KUBE_NAMESPACE}
-    - kubectl apply -k manifests/ -n ${STAGING_KUBE_NAMESPACE}
-    - kubectl rollout status deployment/billing-app -n ${STAGING_KUBE_NAMESPACE} --timeout=300s
-    # Get the ELB URL after deployment for environment URL
-    - >
-      export SERVICE_URL=$(kubectl get service billing-app -n ${STAGING_KUBE_NAMESPACE} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-    - >-
-      echo "Service available at: $SERVICE_URL"
+
+    # Wait for the database to be ready
+    - echo "Waiting for billing database to be ready..."
+    - kubectl rollout status statefulset/billing-db -n ${STAGING_KUBE_NAMESPACE} --timeout=300s
+
+    # Delete the old StatefulSet without deleting the pods
+    - echo "Deleting old StatefulSet without deleting pods..."
+    - kubectl delete statefulset billing-app -n ${STAGING_KUBE_NAMESPACE} --cascade=orphan || true
+
+    # Apply the new StatefulSet definition
+    - echo "Applying new StatefulSet and Service..."
+    - kubectl apply -f manifests/billing-db.yaml -n ${STAGING_KUBE_NAMESPACE}
+    - kubectl apply -f manifests/billing-app.yaml -n ${STAGING_KUBE_NAMESPACE}
+
+    # Increase the timeout for the rollout
+    - echo "Waiting for deployment to complete (10 minute timeout)"
+    - kubectl rollout status statefulset/billing-app -n ${STAGING_KUBE_NAMESPACE} --timeout=600s
+
   environment:
     name: staging
-    url: http://$SERVICE_URL
   needs:
-    - job: staging-approval
-      artifacts: false
     - job: containerize
   only:
     - main
@@ -341,48 +388,56 @@ deploy-prod:
     - microservices
   extends: .k8s-setup
   script:
-    # Use our shared script to configure kubectl
+    # Use our local script to configure kubectl
     - |
-      if [ -f "./ci-configure-kubectl.sh" ]; then
-        ./ci-configure-kubectl.sh --cluster-name ${PROD_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION} --environment ${PROD_KUBE_NAMESPACE}
+      echo "Using local script to configure kubectl"
+      if [ -f "scripts/configure-kubectl.sh" ]; then
+        chmod +x scripts/configure-kubectl.sh
+        # Run with environment variables explicitly passed
+        AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}" \
+        AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}" \
+        AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-eu-north-1}" \
+        AWS_CLUSTER_NAME="${AWS_CLUSTER_NAME}" \
+        ./scripts/configure-kubectl.sh --environment ${PROD_KUBE_NAMESPACE}
       else
-        # Fallback if script not available
-        aws eks update-kubeconfig --name ${PROD_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION}
+        echo "ERROR: Could not find local configure-kubectl.sh script"
+        exit 1
       fi
 
     # Create Kubernetes secrets from GitLab CI variables
     - |
-      kubectl create secret generic billing-app-secrets \
+      kubectl create secret generic billing-secrets \
         --from-literal=DB_HOST=${PROD_BILLING_DB_HOST} \
         --from-literal=DB_PORT=${PROD_BILLING_DB_PORT} \
         --from-literal=DB_USER=${PROD_BILLING_DB_USER} \
         --from-literal=DB_PASSWORD=${PROD_BILLING_DB_PASSWORD} \
         --from-literal=DB_NAME=${PROD_BILLING_DB_NAME} \
-        --from-literal=HOST=0.0.0.0 \
-        --from-literal=PORT=3000 \
+        --from-literal=POSTGRES_PASSWORD=${PROD_BILLING_POSTGRES_PASSWORD} \
+        --from-literal=POSTGRES_USER=${PROD_BILLING_POSTGRES_USER} \
+        --from-literal=RABBITMQ_API_URL=${PROD_BILLING_RABBITMQ_API_URL} \
+        --from-literal=RABBITMQ_PORT=${PROD_BILLING_RABBITMQ_PORT} \
+        --from-literal=RABBITMQ_USER=${PROD_BILLING_RABBITMQ_USER} \
+        --from-literal=RABBITMQ_PASSWORD=${PROD_BILLING_RABBITMQ_PASSWORD} \
+        --from-literal=RABBITMQ_QUEUE=${PROD_BILLING_RABBITMQ_QUEUE} \
+        --from-literal=HOST=${PROD_BILLING_HOST} \
+        --from-literal=PORT=${PROD_BILLING_PORT} \
         -n ${PROD_KUBE_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
     - echo "Deploying to production environment on EKS"
     # Replace image placeholders in manifests
-    - sed -i "s|IMAGE_REPO|${GITLAB_REGISTRY_URL}/root/billing-app|g" manifests/billing-app.yaml
-    - sed -i "s|IMAGE_TAG|${CI_COMMIT_SHORT_SHA}|g" manifests/billing-app.yaml
+    - sed -i "s|\${DOCKER_HUB_REPO}|${DOCKER_HUB_REPO}|g" manifests/billing-app.yaml
+    - sed -i "s|\${CI_COMMIT_SHORT_SHA}|${CI_COMMIT_SHORT_SHA}|g" manifests/billing-app.yaml
 
     # Replace billing-db image variables
-    - sed -i "s|\${GITLAB_REGISTRY_URL}|${GITLAB_REGISTRY_URL}|g" manifests/billing-db.yaml
+    - sed -i "s|\${DOCKER_HUB_REPO}|${DOCKER_HUB_REPO}|g" manifests/billing-db.yaml
     - sed -i "s|\${CI_COMMIT_SHORT_SHA}|${CI_COMMIT_SHORT_SHA}|g" manifests/billing-db.yaml
 
     # Apply Kubernetes manifests
-    - kubectl apply -f manifests/billing-app.yaml -n ${PROD_KUBE_NAMESPACE}
     - kubectl apply -f manifests/billing-db.yaml -n ${PROD_KUBE_NAMESPACE}
-    - kubectl apply -k manifests/ -n ${PROD_KUBE_NAMESPACE}
-    - kubectl rollout status deployment/billing-app -n ${PROD_KUBE_NAMESPACE} --timeout=300s
-    # Get the ELB URL after deployment
-    - >
-      export SERVICE_URL=$(kubectl get service billing-app -n ${PROD_KUBE_NAMESPACE} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-    - >-
-      echo "Service available at: $SERVICE_URL"
+    - kubectl apply -f manifests/billing-app.yaml -n ${PROD_KUBE_NAMESPACE}
+    - kubectl rollout status statefulset/billing-app -n ${PROD_KUBE_NAMESPACE} --timeout=300s
+
   environment:
     name: production
-    url: http://$SERVICE_URL
   needs:
     - job: approval-prod
       artifacts: false

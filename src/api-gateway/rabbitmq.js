@@ -31,9 +31,13 @@ async function sendToQueue(data) {
       await connectQueue();
     }
     console.log(`Sending message to queue: ${config.rabbitmq.queue}`, data);
-    channel.sendToQueue(config.rabbitmq.queue, Buffer.from(JSON.stringify(data)), {
-      persistent: true,
-    });
+    channel.sendToQueue(
+      config.rabbitmq.queue,
+      Buffer.from(JSON.stringify(data)),
+      {
+        persistent: true,
+      }
+    );
     console.log(`Message sent to queue: ${config.rabbitmq.queue}`);
   } catch (error) {
     console.error("Error sending to queue:", error);

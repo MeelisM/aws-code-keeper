@@ -75,11 +75,6 @@ spec:
                 secretKeyRef:
                   name: billing-secrets
                   key: RABBITMQ_PASSWORD
-            - name: RABBITMQ_API_URL
-              valueFrom:
-                secretKeyRef:
-                  name: billing-secrets
-                  key: RABBITMQ_API_URL
             - name: RABBITMQ_QUEUE
               valueFrom:
                 secretKeyRef:

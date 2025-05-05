@@ -9,12 +9,10 @@ services:
         external_url '${GITLAB_EXTERNAL_URL}'
         gitlab_rails['gitlab_ssh_host'] = '${GITLAB_SSH_HOST}'
         gitlab_rails['gitlab_shell_ssh_port'] = 2222
-        # Enable the container registry
-        registry_external_url '${GITLAB_EXTERNAL_URL}:5050'
-        registry['enable'] = true
-        registry['http_enabled'] = true
-        registry['http_address'] = '0.0.0.0:5050'
-        registry['https_enabled'] = false
+        
+        # Disable the container registry
+        registry['enable'] = false
+
         # Optimize
         postgresql['shared_buffers'] = "256MB"
         postgresql['max_connections'] = 100
@@ -28,7 +26,6 @@ services:
       - '80:80'
       - '8443:443'
       - '2222:22'
-      - '5050:5050'
     volumes:
       - './config:/etc/gitlab'
       - './logs:/var/log/gitlab'
