@@ -1,5 +1,5 @@
-bucket         = "your-terraform-state-bucket"          # Set manually
+bucket         = "your-terraform-state-bucket"          # Set manually in ansible/group_vars/vault.yml
 key            = "terraform/state"
-region         = "eu-north-1"
-dynamodb_table = "your-terraform-state-locks-table"     # Set manually
+region         = "eu-north-1"                           # Set manually in ansible/group_vars/vault.yml
+use_lockfile   = true
 encrypt        = true

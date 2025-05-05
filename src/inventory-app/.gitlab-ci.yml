@@ -35,7 +35,21 @@ variables:
     name: amazon/aws-cli:latest
     entrypoint: [""]
   before_script:
-    - amazon-linux-extras install -y kubectl jq
+    - yum update -y && yum install -y curl tar gzip git jq bash
+    # Install kubectl
+    - curl -LO "https://dl.k8s.io/release/v1.29.4/bin/linux/amd64/kubectl"
+    - chmod +x kubectl && mv kubectl /usr/local/bin/
+    # Get common scripts from terraform repo
+    - git clone ${CI_SERVER_URL}/root/terraform.git || echo "Failed to clone terraform repo, will use local scripts if available"
+    # Use our CI configuration script
+    - |
+      if [ -f "terraform/scripts/ci-configure-kubectl.sh" ]; then
+        cp terraform/scripts/ci-configure-kubectl.sh ./ci-configure-kubectl.sh
+      elif [ -f "../terraform/scripts/ci-configure-kubectl.sh" ]; then
+        cp ../terraform/scripts/ci-configure-kubectl.sh ./ci-configure-kubectl.sh
+      fi
+    - |
+      chmod +x ./ci-configure-kubectl.sh || echo "Warning: Could not find kubectl configuration script"
 
 build:
   stage: build
@@ -96,6 +110,7 @@ build:
       # For containerize job only
       - "dockerfiles/**/*"
       - "manifests/**/*"
+      - "scripts/**/*"
     expire_in: 1 hour
     exclude:
       - .git/
@@ -201,47 +216,97 @@ containerize:
     DOCKER_HOST: unix:///var/run/docker.sock
     DOCKER_TLS_CERTDIR: ""
   script:
-    - echo "Setting up Docker environment"
+    - echo "Setting up Docker environment .."
     - docker info || { echo "Docker not available"; exit 1; }
 
     - cd dockerfiles
 
-    # Try multiple authentication methods for GitLab registry
-    - echo "Logging in to GitLab Container Registry..."
-    # First try using GitLab CI token (recommended)
-    - echo -n "$CI_JOB_TOKEN" | docker login -u gitlab-ci-token --password-stdin $CI_REGISTRY
-    # If the first method fails, try using the environment variable as backup
-    - if [ $? -ne 0 ]; then docker login -u root -p "${GITLAB_REGISTRY_PASSWORD}" ${GITLAB_REGISTRY_URL} || echo "Both login methods failed but continuing anyway"; fi
+    # Enhanced debugging for Docker Hub credentials
+    - echo "Checking for Docker Hub credentials..."
+    - |
+      echo "DOCKER_HUB_USERNAME defined: $(if [ -n "$DOCKER_HUB_USERNAME" ]; then echo 'YES'; else echo 'NO'; fi)"
+    - |
+      echo "DOCKER_HUB_PASSWORD defined: $(if [ -n "$DOCKER_HUB_PASSWORD" ]; then echo 'YES (length: ${#DOCKER_HUB_PASSWORD})'; else echo 'NO'; fi)"
 
-    # Build and push Inventory App image
-    - export INVENTORY_APP_IMAGE="${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
+    # Display Docker config directory
+    - echo "Docker config directory:"
+    - mkdir -p ~/.docker
+    - ls -la ~/.docker || echo "No Docker config directory found"
+
+    # Clear any existing Docker authentication configurations to avoid conflicts
+    - echo "Removing any existing Docker config..."
+    - rm -f ~/.docker/config.json || echo "No Docker config to remove"
+
+    # Clean Docker Hub credentials of whitespace
+    - echo "Processing credentials to remove whitespace..."
+    - |
+      export DOCKER_HUB_USERNAME=$(echo -n "$DOCKER_HUB_USERNAME" | tr -d '\r\n\t ')
+      export DOCKER_HUB_PASSWORD=$(echo -n "$DOCKER_HUB_PASSWORD" | tr -d '\r\n\t ')
+
+    # Log in to Docker Hub with simple error handling
+    - echo "Logging in to Docker Hub..."
+    - |
+      if [ -z "$DOCKER_HUB_USERNAME" ] || [ -z "$DOCKER_HUB_PASSWORD" ]; then
+        echo "ERROR: Docker Hub credentials not found! Make sure DOCKER_HUB_USERNAME and DOCKER_HUB_PASSWORD are set in CI/CD variables."
+        exit 1
+      fi
+
+    # Single login attempt
+    - echo "Attempting login to Docker Hub."
+    - |
+      echo "$DOCKER_HUB_PASSWORD" | docker login docker.io -u "$DOCKER_HUB_USERNAME" --password-stdin || {
+        echo "Docker login failed. Please verify credentials.";
+        exit 1;
+      }
+
+    # Show Docker config after login (hiding password)
+    - echo "Docker config after login:"
+    - |
+      if [ -f ~/.docker/config.json ]; then
+        cat ~/.docker/config.json | grep -v auth | grep -v "https://index.docker.io/v1/"
+      else
+        echo "No Docker config file was created after login"
+      fi
+
+    # Define image names with sanitized username for Docker tag compatibility
+    - |
+      if [ -z "$DOCKER_HUB_REPO" ]; then
+        echo "ERROR: DOCKER_HUB_REPO variable not found! Make sure it is set in CI/CD variables."
+        exit 1
+      fi
+
+      # Export the repository variables to be used in subsequent steps
+      export APP_IMAGE="${DOCKER_HUB_REPO}/inventory-app:${CI_COMMIT_SHORT_SHA}"
+      export DB_IMAGE="${DOCKER_HUB_REPO}/inventory-db:${CI_COMMIT_SHORT_SHA}"
+
+      echo "Using Docker repository: $DOCKER_HUB_REPO"
+      echo "APP_IMAGE: $APP_IMAGE"
+      echo "DB_IMAGE: $DB_IMAGE"
+
+    # Build Inventory App image
     - echo "Building Inventory App image..."
-    - docker build -t ${INVENTORY_APP_IMAGE} -f Dockerfile.inventory-app ..
+    - docker build -t ${APP_IMAGE} -f Dockerfile.inventory-app ..
+    - docker tag ${APP_IMAGE} ${DOCKER_HUB_REPO}/inventory-app:latest
 
-    # Build and push Inventory Database image
-    - export INVENTORY_DB_IMAGE="${CI_REGISTRY_IMAGE}/inventory-db:${CI_COMMIT_SHORT_SHA}"
-    - echo "Building Inventory DB image..."
-    - docker build -t ${INVENTORY_DB_IMAGE} -f Dockerfile.inventory-db .
+    # Build Inventory Database image
+    - echo "Building Inventory DB image"
+    - docker build -t ${DB_IMAGE} -f Dockerfile.inventory-db .
+    - docker tag ${DB_IMAGE} ${DOCKER_HUB_REPO}/inventory-db:latest
 
-    # Push Inventory App image
-    - echo "Pushing Inventory App image ${INVENTORY_APP_IMAGE}..."
-    - docker push ${INVENTORY_APP_IMAGE} || echo "Push failed, may need to configure registry permissions"
-    - docker tag ${INVENTORY_APP_IMAGE} ${CI_REGISTRY_IMAGE}:latest
-    - docker push ${CI_REGISTRY_IMAGE}:latest || echo "Push of latest tag failed"
+    # Push to Docker Hub
+    - echo "Pushing images to Docker Hub..."
+    - docker push ${APP_IMAGE}
+    - docker push ${DB_IMAGE}
+    - docker push ${DOCKER_HUB_REPO}/inventory-app:latest
+    - docker push ${DOCKER_HUB_REPO}/inventory-db:latest
 
-    # Push Inventory DB image
-    - echo "Pushing Inventory DB image ${INVENTORY_DB_IMAGE}..."
-    - docker push ${INVENTORY_DB_IMAGE} || echo "Push failed, may need to configure registry permissions"
-    - docker tag ${INVENTORY_DB_IMAGE} ${CI_REGISTRY_IMAGE}/inventory-db:latest
-    - docker push ${CI_REGISTRY_IMAGE}/inventory-db:latest || echo "Push of latest tag failed"
-  needs:
-    - job: build
-      artifacts: true
-    - job: test
-    - job: scan
-    - job: sast
-  only:
-    - main
+    # Save Docker Hub image names in environment for later stages
+    - cd ..
+    - echo "DOCKERHUB_INVENTORY_APP_IMAGE=${APP_IMAGE}" >> build.env
+    - echo "DOCKERHUB_INVENTORY_DB_IMAGE=${DB_IMAGE}" >> build.env
+  artifacts:
+    reports:
+      dotenv: build.env
 
 staging-approval:
   stage: staging-approval
@@ -258,35 +323,57 @@ deploy-staging:
   tags:
     - microservices
   extends: .k8s-setup
-  before_script:
-    - amazon-linux-extras install -y kubectl
-    - aws eks update-kubeconfig --name eks-cluster-staging --region ${AWS_DEFAULT_REGION}
   script:
+    # Use our local script to configure kubectl instead of relying on external scripts
+    - |
+      echo "Using local script to configure kubectl..."
+      if [ -f "scripts/configure-kubectl.sh" ]; then
+        chmod +x scripts/configure-kubectl.sh
+        ./scripts/configure-kubectl.sh --cluster-name cloud-design-cluster-staging --region ${AWS_DEFAULT_REGION:-eu-north-1} --environment ${STAGING_KUBE_NAMESPACE}
+      else
+        echo "ERROR: Could not find local configure-kubectl.sh script"
+        exit 1
+      fi
+
     # Create Kubernetes secrets from GitLab CI variables
     - |
-      kubectl create secret generic inventory-app-secrets \
+      kubectl create secret generic inventory-secrets \
         --from-literal=DB_HOST=${STAGING_INVENTORY_DB_HOST} \
         --from-literal=DB_PORT=${STAGING_INVENTORY_DB_PORT} \
         --from-literal=DB_USER=${STAGING_INVENTORY_DB_USER} \
         --from-literal=DB_PASSWORD=${STAGING_INVENTORY_DB_PASSWORD} \
         --from-literal=DB_NAME=${STAGING_INVENTORY_DB_NAME} \
-        --from-literal=HOST=0.0.0.0 \
-        --from-literal=PORT=3000 \
+        --from-literal=POSTGRES_PASSWORD=${STAGING_POSTGRES_PASSWORD} \
+        --from-literal=POSTGRES_USER=${STAGING_POSTGRES_USER} \
+        --from-literal=HOST=${STAGING_HOST} \
+        --from-literal=PORT=${STAGING_PORT} \
         -n ${STAGING_KUBE_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+    - kubectl get secret inventory-secrets -o yaml -n ${STAGING_KUBE_NAMESPACE}
     - echo "Deploying to staging environment on EKS"
-    # Replace image placeholders in manifests
-    - sed -i "s|IMAGE_REPO|${GITLAB_REGISTRY_URL}/root/inventory-app|g" manifests/inventory-app.yaml
-    - sed -i "s|IMAGE_TAG|${CI_COMMIT_SHORT_SHA}|g" manifests/inventory-app.yaml
-
-    # Replace inventory-db image variables
-    - sed -i "s|\${GITLAB_REGISTRY_URL}|${GITLAB_REGISTRY_URL}|g" manifests/inventory-db.yaml
+    # Apply Kubernetes manifests individually instead of using kustomize
+    - echo "Applying Kubernetes manifests individually..."
+    # Replace Docker Hub image variables in manifests
+    - sed -i "s|\${DOCKER_HUB_REPO}|${DOCKER_HUB_REPO}|g" manifests/inventory-app.yaml
+    - sed -i "s|\${CI_COMMIT_SHORT_SHA}|${CI_COMMIT_SHORT_SHA}|g" manifests/inventory-app.yaml
+    - sed -i "s|\${DOCKER_HUB_REPO}|${DOCKER_HUB_REPO}|g" manifests/inventory-db.yaml
     - sed -i "s|\${CI_COMMIT_SHORT_SHA}|${CI_COMMIT_SHORT_SHA}|g" manifests/inventory-db.yaml
 
-    # Apply Kubernetes manifests
-    - kubectl apply -f manifests/inventory-app.yaml -n ${STAGING_KUBE_NAMESPACE}
+    # Apply the manifests (database first, then app)
     - kubectl apply -f manifests/inventory-db.yaml -n ${STAGING_KUBE_NAMESPACE}
-    - kubectl apply -k manifests/ -n ${STAGING_KUBE_NAMESPACE}
-    - kubectl rollout status deployment/inventory-app -n ${STAGING_KUBE_NAMESPACE} --timeout=300s
+    - kubectl apply -f manifests/inventory-app.yaml -n ${STAGING_KUBE_NAMESPACE}
+
+    # Add debugging information to see why pods are not starting
+    - echo "Checking pod status..."
+    - kubectl get pods -n ${STAGING_KUBE_NAMESPACE} -l app=inventory-app -o wide
+    - echo "Checking for events that might indicate problems..."
+    - kubectl get events -n ${STAGING_KUBE_NAMESPACE} --sort-by='.lastTimestamp' | grep inventory-app || true
+    - echo "Checking logs from previous pod if available..."
+    - POD_NAME=$(kubectl get pods -n ${STAGING_KUBE_NAMESPACE} -l app=inventory-app -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) || true
+    - if [ -n "$POD_NAME" ]; then kubectl logs $POD_NAME -n ${STAGING_KUBE_NAMESPACE} --previous || true; fi
+
+    # Increase the timeout for the rollout
+    - echo "Waiting for deployment to complete (10 minute timeout)..."
+    - kubectl rollout status deployment/inventory-app -n ${STAGING_KUBE_NAMESPACE} --timeout=600s
     # Get the ELB URL after deployment for environment URL
     - >
       export SERVICE_URL=$(kubectl get service inventory-app -n ${STAGING_KUBE_NAMESPACE} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
@@ -319,10 +406,16 @@ deploy-prod:
   tags:
     - microservices
   extends: .k8s-setup
-  before_script:
-    - amazon-linux-extras install -y kubectl
-    - aws eks update-kubeconfig --name eks-cluster-prod --region ${AWS_DEFAULT_REGION}
   script:
+    # Use our shared script to configure kubectl
+    - |
+      if [ -f "./ci-configure-kubectl.sh" ]; then
+        ./ci-configure-kubectl.sh --cluster-name ${PROD_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION} --environment ${PROD_KUBE_NAMESPACE}
+      else
+        # Fallback if script not available
+        aws eks update-kubeconfig --name ${PROD_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION}
+      fi
+
     # Create Kubernetes secrets from GitLab CI variables
     - |
       kubectl create secret generic inventory-app-secrets \
@@ -336,11 +429,11 @@ deploy-prod:
         -n ${PROD_KUBE_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
     - echo "Deploying to production environment on EKS"
     # Replace image placeholders in manifests
-    - sed -i "s|IMAGE_REPO|${GITLAB_REGISTRY_URL}/root/inventory-app|g" manifests/inventory-app.yaml
-    - sed -i "s|IMAGE_TAG|${CI_COMMIT_SHORT_SHA}|g" manifests/inventory-app.yaml
+    - sed -i "s|\${DOCKER_HUB_REPO}|${DOCKER_HUB_REPO}|g" manifests/inventory-app.yaml
+    - sed -i "s|\${CI_COMMIT_SHORT_SHA}|${CI_COMMIT_SHORT_SHA}|g" manifests/inventory-app.yaml
 
     # Replace inventory-db image variables
-    - sed -i "s|\${GITLAB_REGISTRY_URL}|${GITLAB_REGISTRY_URL}|g" manifests/inventory-db.yaml
+    - sed -i "s|\${DOCKER_HUB_REPO}|${DOCKER_HUB_REPO}|g" manifests/inventory-db.yaml
     - sed -i "s|\${CI_COMMIT_SHORT_SHA}|${CI_COMMIT_SHORT_SHA}|g" manifests/inventory-db.yaml
 
     # Apply Kubernetes manifests
@@ -357,6 +450,8 @@ deploy-prod:
     name: production
     url: http://$SERVICE_URL
   needs:
+    - job: approval-prod
+      artifacts: false
     - job: containerize
   when: manual
   only:

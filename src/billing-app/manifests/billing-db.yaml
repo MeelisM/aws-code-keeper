@@ -105,10 +105,7 @@ spec:
     storage: 100Mi
   accessModes:
     - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Retain
+  persistentVolumeReclaimPolicy: Delete
   storageClassName: local-storage
   hostPath:
     path: /mnt/data/billing
-  claimRef:
-    namespace: default
-    name: billing-db-data-billing-db-0

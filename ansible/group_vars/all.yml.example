@@ -34,3 +34,32 @@ gitlab_registry_url: "{{ gitlab_url | replace('http://', '') | replace('https://
 
 # GitLab registry password - use the same API token for registry authentication
 gitlab_registry_password: "{{ gitlab_api_token }}"
+
+api_gateway_vars: []
+billing_service_vars: []
+
+# Inventory Service CI/CD variables - mapping from vault variables to GitLab CI variables
+inventory_service_vars:
+  # Staging environment variables
+  - var_name: "STAGING_INVENTORY_DB_HOST"
+    var_value: "{{ inventory_service.staging.DB_HOST }}"
+  - var_name: "STAGING_INVENTORY_DB_PORT"
+    var_value: "{{ inventory_service.staging.DB_PORT }}"
+  - var_name: "STAGING_INVENTORY_DB_NAME"
+    var_value: "{{ inventory_service.staging.DB_NAME }}"
+  - var_name: "STAGING_INVENTORY_DB_USER"
+    var_value: "{{ inventory_service.staging.DB_USER }}"
+  - var_name: "STAGING_INVENTORY_DB_PASSWORD"
+    var_value: "{{ inventory_service.staging.DB_PASSWORD }}"
+    masked: true
+  - var_name: "STAGING_POSTGRES_USER"
+    var_value: "{{ inventory_service.staging.POSTGRES_USER }}"
+  - var_name: "STAGING_POSTGRES_PASSWORD"
+    var_value: "{{ inventory_service.staging.POSTGRES_PASSWORD }}"
+    masked: true
+  - var_name: "STAGING_HOST"
+    var_value: "{{ inventory_service.staging.HOST }}"
+  - var_name: "STAGING_PORT"
+    var_value: "{{ inventory_service.staging.PORT }}"
+
+global_vars: []

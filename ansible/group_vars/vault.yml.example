@@ -1,187 +1,104 @@
 # This file should be encrypted using ansible-vault
-# Use: ansible-vault encrypt vault.yml
+# Encrypt with: ansible-vault encrypt vault.yml
 
-# API Gateway variables
-api_gateway_vars:
-  # Test environment variables
-  - var_name: "TEST_RABBITMQ_HOST"
-    var_value: "billing-queue"
-  - var_name: "TEST_RABBITMQ_PORT"
-    var_value: "5672"
-  - var_name: "TEST_RABBITMQ_USER"
-    var_value: "your_rabbitmq_username"
-  - var_name: "TEST_RABBITMQ_PASSWORD"
-    var_value: "your_rabbitmq_password"
-    masked: true
-  - var_name: "TEST_RABBITMQ_QUEUE"
-    var_value: "billing_queue"
-  - var_name: "TEST_RABBITMQ_API_URL"
-    var_value: "amqp://your_rabbitmq_username:your_rabbitmq_password@billing-queue:5672"
-  - var_name: "TEST_INVENTORY_URL"
-    var_value: "http://inventory-app:8080/api/movies"
+api_gateway:
+  staging:
+    RABBITMQ_HOST: billing-queue
+    RABBITMQ_PORT: "5672"
+    RABBITMQ_USER: rabbit_user
+    RABBITMQ_PASSWORD: rabbit_password # masked
+    RABBITMQ_QUEUE: billing_queue
+    RABBITMQ_API_URL: "amqp://rabbit_user:rabbit_password@billing-queue:5672"
+    INVENTORY_URL: "http://inventory-app:8080/api/movies"
+  prod:
+    RABBITMQ_HOST: billing-queue
+    RABBITMQ_PORT: "5672"
+    RABBITMQ_USER: rabbit_user
+    RABBITMQ_PASSWORD: rabbit_password # masked
+    RABBITMQ_QUEUE: billing_queue
+    RABBITMQ_API_URL: "amqp://rabbit_user:rabbit_password@billing-queue:5672"
+    INVENTORY_URL: "http://inventory-app:8080/api/movies"
 
-  # Staging environment variables
-  - var_name: "STAGING_RABBITMQ_HOST"
-    var_value: "billing-queue"
-  - var_name: "STAGING_RABBITMQ_PORT"
-    var_value: "5672"
-  - var_name: "STAGING_RABBITMQ_USER"
-    var_value: "your_staging_rabbitmq_username"
-  - var_name: "STAGING_RABBITMQ_PASSWORD"
-    var_value: "your_staging_rabbitmq_password"
-    masked: true
-  - var_name: "STAGING_RABBITMQ_QUEUE"
-    var_value: "billing_queue"
-  - var_name: "STAGING_RABBITMQ_API_URL"
-    var_value: "amqp://your_staging_rabbitmq_username:your_staging_rabbitmq_password@billing-queue:5672"
-  - var_name: "STAGING_INVENTORY_URL"
-    var_value: "http://inventory-app:8080/api/movies"
+billing_service:
+  staging:
+    DB_HOST: billing-db
+    DB_PORT: "5432"
+    DB_NAME: billing_db
+    DB_USER: billing_user
+    DB_PASSWORD: billing_db_password # masked
+    RABBITMQ_HOST: billing-queue
+    RABBITMQ_PORT: "5672"
+    RABBITMQ_USER: rabbit_user
+    RABBITMQ_PASSWORD: rabbit_password # masked
+    RABBITMQ_QUEUE: billing_queue
+    RABBITMQ_API_URL: "amqp://rabbit_user:rabbit_password@billing-queue:5672"
+  prod:
+    DB_HOST: billing-db
+    DB_PORT: "5432"
+    DB_NAME: billing_db
+    DB_USER: billing_user
+    DB_PASSWORD: billing_db_password # masked
+    RABBITMQ_HOST: billing-queue
+    RABBITMQ_PORT: "5672"
+    RABBITMQ_USER: rabbit_user
+    RABBITMQ_PASSWORD: rabbit_password # masked
+    RABBITMQ_QUEUE: billing_queue
+    RABBITMQ_API_URL: "amqp://rabbit_user:rabbit_password@billing-queue:5672"
 
-  # Production environment variables
-  - var_name: "PROD_RABBITMQ_HOST"
-    var_value: "billing-queue"
-  - var_name: "PROD_RABBITMQ_PORT"
-    var_value: "5672"
-  - var_name: "PROD_RABBITMQ_USER"
-    var_value: "your_prod_rabbitmq_username"
-  - var_name: "PROD_RABBITMQ_PASSWORD"
-    var_value: "your_prod_rabbitmq_password"
-    masked: true
-  - var_name: "PROD_RABBITMQ_QUEUE"
-    var_value: "billing_queue"
-  - var_name: "PROD_RABBITMQ_API_URL"
-    var_value: "amqp://your_prod_rabbitmq_username:your_prod_rabbitmq_password@billing-queue:5672"
-  - var_name: "PROD_INVENTORY_URL"
-    var_value: "http://inventory-app:8080/api/movies"
+inventory_service:
+  staging:
+    DB_HOST: inventory-db
+    DB_PORT: "5432"
+    DB_NAME: inventory_db
+    DB_USER: inventory_user2
+    DB_PASSWORD: inventory_password # masked
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: postgres # masked
+    HOST: 0.0.0.0
+    PORT: "8080"
+  prod:
+    DB_HOST: inventory-db
+    DB_PORT: "5432"
+    DB_NAME: inventory_db
+    DB_USER: inventory_user
+    DB_PASSWORD: inventory_password # masked
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: postgres # masked
+    HOST: 0.0.0.0
+    PORT: "8080"
 
-# Billing Service variables
-billing_service_vars:
-  # Test environment variables
-  - var_name: "TEST_DB_HOST"
-    var_value: "billing-db"
-  - var_name: "TEST_DB_PORT"
-    var_value: "5432"
-  - var_name: "TEST_DB_NAME"
-    var_value: "billing_db"
-  - var_name: "TEST_DB_USER"
-    var_value: "your_db_username"
-  - var_name: "TEST_DB_PASSWORD"
-    var_value: "your_db_password"
-    masked: true
-  - var_name: "TEST_RABBITMQ_HOST"
-    var_value: "billing-queue"
-  - var_name: "TEST_RABBITMQ_PORT"
-    var_value: "5672"
-  - var_name: "TEST_RABBITMQ_USER"
-    var_value: "your_rabbitmq_username"
-  - var_name: "TEST_RABBITMQ_PASSWORD"
-    var_value: "your_rabbitmq_password"
-    masked: true
-  - var_name: "TEST_RABBITMQ_QUEUE"
-    var_value: "billing_queue"
-  - var_name: "TEST_RABBITMQ_API_URL"
-    var_value: "amqp://your_rabbitmq_username:your_rabbitmq_password@billing-queue:5672"
+global:
+  AWS_DEFAULT_REGION: your_aws_region
+  AWS_ACCESS_KEY_ID: key_goes_here # masked
+  AWS_SECRET_ACCESS_KEY: key_goes_here # masked
+  DOCKER_HUB_USERNAME: username
+  DOCKER_HUB_PASSWORD: password # masked
+  DOCKER_HUB_REPO: repositoryName
 
-  # Staging environment variables
-  - var_name: "STAGING_DB_HOST"
-    var_value: "billing-db"
-  - var_name: "STAGING_DB_PORT"
-    var_value: "5432"
-  - var_name: "STAGING_DB_NAME"
-    var_value: "billing_db"
-  - var_name: "STAGING_DB_USER"
-    var_value: "your_staging_db_username"
-  - var_name: "STAGING_DB_PASSWORD"
-    var_value: "your_staging_db_password"
-    masked: true
-  - var_name: "STAGING_RABBITMQ_HOST"
-    var_value: "billing-queue"
-  - var_name: "STAGING_RABBITMQ_PORT"
-    var_value: "5672"
-  - var_name: "STAGING_RABBITMQ_USER"
-    var_value: "your_staging_rabbitmq_username"
-  - var_name: "STAGING_RABBITMQ_PASSWORD"
-    var_value: "your_staging_rabbitmq_password"
-    masked: true
-  - var_name: "STAGING_RABBITMQ_QUEUE"
-    var_value: "billing_queue"
-  - var_name: "STAGING_RABBITMQ_API_URL"
-    var_value: "amqp://your_staging_rabbitmq_username:your_staging_rabbitmq_password@billing-queue:5672"
-
-  # Production environment variables
-  - var_name: "PROD_DB_HOST"
-    var_value: "billing-db"
-  - var_name: "PROD_DB_PORT"
-    var_value: "5432"
-  - var_name: "PROD_DB_NAME"
-    var_value: "billing_db"
-  - var_name: "PROD_DB_USER"
-    var_value: "your_prod_db_username"
-  - var_name: "PROD_DB_PASSWORD"
-    var_value: "your_prod_db_password"
-    masked: true
-  - var_name: "PROD_RABBITMQ_HOST"
-    var_value: "billing-queue"
-  - var_name: "PROD_RABBITMQ_PORT"
-    var_value: "5672"
-  - var_name: "PROD_RABBITMQ_USER"
-    var_value: "your_prod_rabbitmq_username"
-  - var_name: "PROD_RABBITMQ_PASSWORD"
-    var_value: "your_prod_rabbitmq_password"
-    masked: true
-  - var_name: "PROD_RABBITMQ_QUEUE"
-    var_value: "billing_queue"
-  - var_name: "PROD_RABBITMQ_API_URL"
-    var_value: "amqp://your_prod_rabbitmq_username:your_prod_rabbitmq_password@billing-queue:5672"
-
-# Inventory Service variables
-inventory_service_vars:
-  # Test environment variables
-  - var_name: "TEST_DB_HOST"
-    var_value: "inventory-db"
-  - var_name: "TEST_DB_PORT"
-    var_value: "5432"
-  - var_name: "TEST_DB_NAME"
-    var_value: "inventory_db"
-  - var_name: "TEST_DB_USER"
-    var_value: "your_inventory_username"
-  - var_name: "TEST_DB_PASSWORD"
-    var_value: "your_inventory_password"
-    masked: true
-
-  # Staging environment variables
-  - var_name: "STAGING_DB_HOST"
-    var_value: "inventory-db"
-  - var_name: "STAGING_DB_PORT"
-    var_value: "5432"
-  - var_name: "STAGING_DB_NAME"
-    var_value: "inventory_db"
-  - var_name: "STAGING_DB_USER"
-    var_value: "your_staging_inventory_username"
-  - var_name: "STAGING_DB_PASSWORD"
-    var_value: "your_staging_inventory_password"
-    masked: true
-
-  # Production environment variables
-  - var_name: "PROD_DB_HOST"
-    var_value: "inventory-db"
-  - var_name: "PROD_DB_PORT"
-    var_value: "5432"
-  - var_name: "PROD_DB_NAME"
-    var_value: "inventory_db"
-  - var_name: "PROD_DB_USER"
-    var_value: "your_prod_inventory_username"
-  - var_name: "PROD_DB_PASSWORD"
-    var_value: "your_prod_inventory_password"
-    masked: true
-
-# Global CI/CD variables
-global_vars:
-  - var_name: "AWS_DEFAULT_REGION"
-    var_value: "your-aws-region"
-  - var_name: "AWS_ACCESS_KEY_ID"
-    var_value: "your-aws-access-key-id"
-    masked: true
-  - var_name: "AWS_SECRET_ACCESS_KEY"
-    var_value: "your-aws-secret-access-key"
-    masked: true
+terraform:
+  common:
+    TF_VAR_cli_admin_username: cli_admin
+  staging:
+    TF_VAR_vpc_cidr: 10.1.0.0/16
+    TF_VAR_public_subnet_cidrs: ["10.1.1.0/24", "10.1.2.0/24"]
+    TF_VAR_private_subnet_cidrs: ["10.1.11.0/24", "10.1.12.0/24"]
+    TF_VAR_availability_zones: ["eu-north-1a", "eu-north-1b"]
+    TF_VAR_cluster_name: your-cluster-staging
+    TF_VAR_cluster_version: "1.32"
+    TF_VAR_node_instance_types: ["t3.medium"]
+    TF_VAR_capacity_type: SPOT
+    TF_VAR_desired_capacity: 1
+    TF_VAR_min_capacity: 1
+    TF_VAR_max_capacity: 1
+  prod:
+    TF_VAR_vpc_cidr: 10.0.0.0/16
+    TF_VAR_public_subnet_cidrs: ["10.0.1.0/24", "10.0.2.0/24"]
+    TF_VAR_private_subnet_cidrs: ["10.0.11.0/24", "10.0.12.0/24"]
+    TF_VAR_availability_zones: ["eu-north-1a", "eu-north-1b"]
+    TF_VAR_cluster_name: your-cluster-production
+    TF_VAR_cluster_version: "1.32"
+    TF_VAR_node_instance_types: ["t3.medium"]
+    TF_VAR_capacity_type: SPOT
+    TF_VAR_desired_capacity: 1
+    TF_VAR_min_capacity: 1
+    TF_VAR_max_capacity: 1

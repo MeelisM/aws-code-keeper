@@ -35,7 +35,21 @@ variables:
     name: amazon/aws-cli:latest
     entrypoint: [""]
   before_script:
-    - amazon-linux-extras install -y kubectl jq
+    - yum update -y && yum install -y curl tar gzip git jq bash
+    # Install kubectl
+    - curl -LO "https://dl.k8s.io/release/v1.29.4/bin/linux/amd64/kubectl"
+    - chmod +x kubectl && mv kubectl /usr/local/bin/
+    # Get common scripts from terraform repo
+    - git clone ${CI_SERVER_URL}/root/terraform.git || echo "Failed to clone terraform repo, will use local scripts if available"
+    # Use our CI configuration script
+    - |
+      if [ -f "terraform/scripts/ci-configure-kubectl.sh" ]; then
+        cp terraform/scripts/ci-configure-kubectl.sh ./ci-configure-kubectl.sh
+      elif [ -f "../terraform/scripts/ci-configure-kubectl.sh" ]; then
+        cp ../terraform/scripts/ci-configure-kubectl.sh ./ci-configure-kubectl.sh
+      fi
+    - |
+      chmod +x ./ci-configure-kubectl.sh || echo "Warning: Could not find kubectl configuration script"
 
 build:
   stage: build
@@ -206,7 +220,7 @@ containerize:
 
     - echo "Logging in to GitLab Container Registry..."
     - echo "Attempting Docker login to registry..."
-    - docker login -u root -p "${GITLAB_REGISTRY_PASSWORD}" ${GITLAB_REGISTRY_URL} || echo "Login failed but continuing anyway"
+    - echo "${GITLAB_REGISTRY_PASSWORD}" | docker login -u root --password-stdin ${GITLAB_REGISTRY_URL} || echo "Login failed but continuing anyway"
 
     # Push API Gateway image
     - echo "Pushing API Gateway image ${API_GATEWAY_IMAGE}..."
@@ -243,10 +257,12 @@ deploy-staging:
   tags:
     - microservices
   extends: .k8s-setup
-  before_script:
-    - amazon-linux-extras install -y kubectl
-    - aws eks update-kubeconfig --name eks-cluster-staging --region ${AWS_DEFAULT_REGION}
   script:
+    # Use the TF_VAR_STAGING_cluster_name variable from GitLab CI/CD variables
+    - |
+      echo "Configuring kubectl to connect to the staging EKS cluster..."
+      aws eks update-kubeconfig --name ${TF_VAR_STAGING_cluster_name} --region ${AWS_DEFAULT_REGION:-eu-north-1}
+
     # Create Kubernetes secrets from GitLab CI variables - mapping from prefixed to app variables
     - |
       kubectl create secret generic api-gateway-secrets \
@@ -306,10 +322,16 @@ deploy-prod:
   tags:
     - microservices
   extends: .k8s-setup
-  before_script:
-    - amazon-linux-extras install -y kubectl
-    - aws eks update-kubeconfig --name eks-cluster-prod --region ${AWS_DEFAULT_REGION}
   script:
+    # Use our shared script to configure kubectl
+    - |
+      if [ -f "./ci-configure-kubectl.sh" ]; then
+        ./ci-configure-kubectl.sh --cluster-name ${PROD_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION} --environment ${PROD_KUBE_NAMESPACE}
+      else
+        # Fallback if script not available
+        aws eks update-kubeconfig --name ${PROD_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION}
+      fi
+
     # Create Kubernetes secrets from GitLab CI variables - mapping from prefixed to app variables
     - |
       kubectl create secret generic api-gateway-secrets \
@@ -346,6 +368,8 @@ deploy-prod:
     name: production
     url: http://$SERVICE_URL
   needs:
+    - job: approval-prod
+      artifacts: false
     - job: containerize
   when: manual
   only:

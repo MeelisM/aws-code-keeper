@@ -16,13 +16,17 @@ spec:
       restartPolicy: Always
       containers:
         - name: postgres
-          image: ${GITLAB_REGISTRY_URL}/root/inventory-app/inventory-db:${CI_COMMIT_SHORT_SHA}
+          # Use Docker Hub image from environment variable
+          image: "${DOCKER_HUB_REPO}/inventory-db:${CI_COMMIT_SHORT_SHA}"
           ports:
             - containerPort: 5432
           env:
             # PostgreSQL admin credentials
             - name: POSTGRES_USER
-              value: "postgres"
+              valueFrom:
+                secretKeyRef:
+                  name: inventory-secrets
+                  key: POSTGRES_USER
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -109,10 +113,7 @@ spec:
     storage: 100Mi
   accessModes:
     - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Retain
+  persistentVolumeReclaimPolicy: Delete
   storageClassName: local-storage
   hostPath:
     path: /mnt/data/inventory
-  claimRef:
-    namespace: default
-    name: inventory-db-data-inventory-db-0

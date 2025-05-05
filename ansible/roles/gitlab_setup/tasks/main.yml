@@ -266,6 +266,108 @@
   ignore_errors: yes
   register: create_registry_password_variable_result
 
+- name: Set Docker Hub credentials for API Gateway project
+  uri:
+    url: "{{ gitlab_url }}/api/v4/projects/{{ api_gateway_project.json[0].id }}/variables"
+    method: POST
+    headers:
+      PRIVATE-TOKEN: "{{ gitlab_api_token }}"
+    body_format: json
+    body:
+      key: "{{ item.key }}"
+      value: "{{ item.value }}"
+      protected: "{{ item.protected | default(true) }}"
+      masked: "{{ item.masked | default(true) }}"
+    status_code: [201, 400]
+  loop:
+    - {
+        key: "DOCKER_HUB_USERNAME",
+        value: "{{ global.DOCKER_HUB_USERNAME }}",
+        masked: false,
+      }
+    - {
+        key: "DOCKER_HUB_PASSWORD",
+        value: "{{ global.DOCKER_HUB_PASSWORD }}",
+        masked: true,
+      }
+    - {
+        key: "DOCKER_HUB_REPO",
+        value: "{{ global.DOCKER_HUB_REPO }}",
+        masked: true,
+      }
+  register: api_gateway_docker_vars
+  ignore_errors: yes
+  when: api_gateway_project is defined and api_gateway_project.json is defined
+  no_log: true
+
+- name: Set Docker Hub credentials for Billing Service project
+  uri:
+    url: "{{ gitlab_url }}/api/v4/projects/{{ billing_service_project.json[0].id }}/variables"
+    method: POST
+    headers:
+      PRIVATE-TOKEN: "{{ gitlab_api_token }}"
+    body_format: json
+    body:
+      key: "{{ item.key }}"
+      value: "{{ item.value }}"
+      protected: "{{ item.protected | default(true) }}"
+      masked: "{{ item.masked | default(true) }}"
+    status_code: [201, 400]
+  loop:
+    - {
+        key: "DOCKER_HUB_USERNAME",
+        value: "{{ global.DOCKER_HUB_USERNAME }}",
+        masked: false,
+      }
+    - {
+        key: "DOCKER_HUB_PASSWORD",
+        value: "{{ global.DOCKER_HUB_PASSWORD }}",
+        masked: true,
+      }
+    - {
+        key: "DOCKER_HUB_REPO",
+        value: "{{ global.DOCKER_HUB_REPO }}",
+        masked: true,
+      }
+  register: billing_service_docker_vars
+  ignore_errors: yes
+  when: billing_service_project is defined and billing_service_project.json is defined
+  no_log: true
+
+- name: Set Docker Hub credentials for Inventory Service project
+  uri:
+    url: "{{ gitlab_url }}/api/v4/projects/{{ inventory_service_project.json[0].id }}/variables"
+    method: POST
+    headers:
+      PRIVATE-TOKEN: "{{ gitlab_api_token }}"
+    body_format: json
+    body:
+      key: "{{ item.key }}"
+      value: "{{ item.value | trim }}"
+      protected: "{{ item.protected | default(true) }}"
+      masked: "{{ item.masked | default(true) }}"
+    status_code: [201, 400]
+  loop:
+    - {
+        key: "DOCKER_HUB_USERNAME",
+        value: "{{ global.DOCKER_HUB_USERNAME }}",
+        masked: false,
+      }
+    - {
+        key: "DOCKER_HUB_PASSWORD",
+        value: "{{ global.DOCKER_HUB_PASSWORD }}",
+        masked: true,
+      }
+    - {
+        key: "DOCKER_HUB_REPO",
+        value: "{{ global.DOCKER_HUB_REPO }}",
+        masked: true,
+      }
+  register: inventory_service_docker_vars
+  ignore_errors: yes
+  when: inventory_service_project is defined and inventory_service_project.json is defined
+  no_log: true
+
 - name: Get GitLab runner registration token
   uri:
     url: "{{ gitlab_url }}/api/v4/user/runners"
@@ -339,12 +441,37 @@
       PRIVATE-TOKEN: "{{ gitlab_api_token }}"
     body_format: json
     body:
-      key: "{{ item.var_name }}"
-      value: "{{ item.var_value | to_json }}"
+      key: "{{ item.key }}"
+      value: "{{ item.value }}"
       protected: "{{ item.protected | default(false) }}"
       masked: "{{ item.masked | default(true) }}"
     status_code: [201, 400]
-  with_items: "{{ global_vars }}"
+  loop:
+    - {
+        key: "AWS_DEFAULT_REGION",
+        value: "{{ global.AWS_DEFAULT_REGION }}",
+        masked: false,
+      }
+    - {
+        key: "AWS_ACCESS_KEY_ID",
+        value: "{{ global.AWS_ACCESS_KEY_ID }}",
+        masked: true,
+      }
+    - {
+        key: "AWS_SECRET_ACCESS_KEY",
+        value: "{{ global.AWS_SECRET_ACCESS_KEY }}",
+        masked: true,
+      }
+    - {
+        key: "DOCKER_HUB_USERNAME",
+        value: "{{ global.DOCKER_HUB_USERNAME }}",
+        masked: false,
+      }
+    - {
+        key: "DOCKER_HUB_PASSWORD",
+        value: "{{ global.DOCKER_HUB_PASSWORD }}",
+        masked: true,
+      }
   register: terraform_vars_global
   ignore_errors: yes
   when: terraform_project is defined and terraform_project.json is defined and terraform_project.json | length > 0
@@ -358,12 +485,107 @@
       PRIVATE-TOKEN: "{{ gitlab_api_token }}"
     body_format: json
     body:
-      key: "{{ item.var_name }}"
-      value: "{{ item.var_value }}"
+      key: "{{ item.key }}"
+      value: "{{ item.value }}"
       protected: "{{ item.protected | default(true) }}"
       masked: "{{ item.masked | default(false) }}"
     status_code: [201, 400]
-  with_items: "{{ terraform_vars }}"
+  loop:
+    # Common Terraform variables
+    - {
+        key: "TF_VAR_cli_admin_username",
+        value: "{{ terraform.common.TF_VAR_cli_admin_username }}",
+      }
+    # Staging environment variables
+    - {
+        key: "TF_VAR_STAGING_vpc_cidr",
+        value: "{{ terraform.staging.TF_VAR_vpc_cidr }}",
+      }
+    - {
+        key: "TF_VAR_STAGING_public_subnet_cidrs",
+        value: "{{ terraform.staging.TF_VAR_public_subnet_cidrs | to_json }}",
+      }
+    - {
+        key: "TF_VAR_STAGING_private_subnet_cidrs",
+        value: "{{ terraform.staging.TF_VAR_private_subnet_cidrs | to_json }}",
+      }
+    - {
+        key: "TF_VAR_STAGING_availability_zones",
+        value: "{{ terraform.staging.TF_VAR_availability_zones | to_json }}",
+      }
+    - {
+        key: "TF_VAR_STAGING_cluster_name",
+        value: "{{ terraform.staging.TF_VAR_cluster_name }}",
+      }
+    - {
+        key: "TF_VAR_STAGING_cluster_version",
+        value: "{{ terraform.staging.TF_VAR_cluster_version }}",
+      }
+    - {
+        key: "TF_VAR_STAGING_node_instance_types",
+        value: "{{ terraform.staging.TF_VAR_node_instance_types | to_json }}",
+      }
+    - {
+        key: "TF_VAR_STAGING_capacity_type",
+        value: "{{ terraform.staging.TF_VAR_capacity_type }}",
+      }
+    - {
+        key: "TF_VAR_STAGING_desired_capacity",
+        value: "{{ terraform.staging.TF_VAR_desired_capacity }}",
+      }
+    - {
+        key: "TF_VAR_STAGING_min_capacity",
+        value: "{{ terraform.staging.TF_VAR_min_capacity }}",
+      }
+    - {
+        key: "TF_VAR_STAGING_max_capacity",
+        value: "{{ terraform.staging.TF_VAR_max_capacity }}",
+      }
+    # Production environment variables
+    - {
+        key: "TF_VAR_PROD_vpc_cidr",
+        value: "{{ terraform.prod.TF_VAR_vpc_cidr }}",
+      }
+    - {
+        key: "TF_VAR_PROD_public_subnet_cidrs",
+        value: "{{ terraform.prod.TF_VAR_public_subnet_cidrs | to_json }}",
+      }
+    - {
+        key: "TF_VAR_PROD_private_subnet_cidrs",
+        value: "{{ terraform.prod.TF_VAR_private_subnet_cidrs | to_json }}",
+      }
+    - {
+        key: "TF_VAR_PROD_availability_zones",
+        value: "{{ terraform.prod.TF_VAR_availability_zones | to_json }}",
+      }
+    - {
+        key: "TF_VAR_PROD_cluster_name",
+        value: "{{ terraform.prod.TF_VAR_cluster_name }}",
+      }
+    - {
+        key: "TF_VAR_PROD_cluster_version",
+        value: "{{ terraform.prod.TF_VAR_cluster_version }}",
+      }
+    - {
+        key: "TF_VAR_PROD_node_instance_types",
+        value: "{{ terraform.prod.TF_VAR_node_instance_types | to_json }}",
+      }
+    - {
+        key: "TF_VAR_PROD_capacity_type",
+        value: "{{ terraform.prod.TF_VAR_capacity_type }}",
+      }
+    - {
+        key: "TF_VAR_PROD_desired_capacity",
+        value: "{{ terraform.prod.TF_VAR_desired_capacity }}",
+      }
+    - {
+        key: "TF_VAR_PROD_min_capacity",
+        value: "{{ terraform.prod.TF_VAR_min_capacity }}",
+      }
+    - {
+        key: "TF_VAR_PROD_max_capacity",
+        value: "{{ terraform.prod.TF_VAR_max_capacity }}",
+      }
   register: terraform_vars_result
   ignore_errors: yes
   when: terraform_project is defined and terraform_project.json is defined and terraform_project.json | length > 0

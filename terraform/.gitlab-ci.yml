@@ -219,7 +219,9 @@ apply-prod:
         terraform plan -out=production.tfplan
       fi
     - terraform apply -auto-approve production.tfplan
+    # Export outputs for later use
     - terraform output -json > terraform-output-production.json
+    # Tagging successful deployments
     - |
       if [ -n "${CI_COMMIT_TAG}" ]; then
         echo "This build is tagged as ${CI_COMMIT_TAG}"
@@ -246,7 +248,7 @@ cleanup-staging:
   stage: apply-staging
   extends: .terraform-setup
   dependencies:
-    - apply-staging
+    - apply-staging # Changed from 'init' to 'apply-staging' to get state files
   script:
     - |
       echo "WARNING: This will DESTROY all resources in the staging environment!"
@@ -269,7 +271,7 @@ cleanup-prod:
   stage: apply-prod
   extends: .terraform-setup
   dependencies:
-    - apply-prod
+    - apply-prod # Changed from 'init' to 'apply-prod' to get state files
   script:
     - |
       echo "WARNING: This will DESTROY all resources in the production environment!"
