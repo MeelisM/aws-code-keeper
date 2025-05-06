@@ -363,9 +363,10 @@ To clean up resources:
 
 1. **Remove application resources**:
 
-   Done via Infrastructure pipeline. Run `cleanup-prod` and then `cleanup-staging`. <br>Pipeline cleans up all the Kubernetes resources before using `terraform destroy`.<br> No AWS resources should stay up when jobs finish.
+   Done via Infrastructure pipeline. Run `cleanup-prod` and then `cleanup-staging`. <br>Pipeline cleans up all the Kubernetes resources before using `terraform destroy`.
 
 2. **Destroy S3 Terraform State backend**:
+
    While in `terraform/bootstrap` directory, run:
 
    ```bash
