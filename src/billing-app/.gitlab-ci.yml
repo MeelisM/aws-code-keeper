@@ -114,9 +114,9 @@ test:
     - npm run test || echo "No tests available, skipping"
   coverage: '/All files[^|]*\|[^|]*\s+([\d\.]+)/'
   artifacts:
-    reports:
-      junit: junit-test-results.xml
-    expire_in: 1 week
+    exclude:
+      - .git/
+      - .git/**/*
   needs:
     - job: build
       artifacts: true

@@ -4,6 +4,7 @@
 
 A cloud-native microservices architecture deployed on AWS EKS (Elastic Kubernetes Service), designed for high availability, scalability, and security, with fully automated CI/CD pipelines using self-hosted GitLab.
 
+**Diagram of AWS resources for the production environment.**
 ![Architecture Diagram](./images/diagram.png)
 
 ## Project Overview
@@ -76,7 +77,11 @@ Successful API test results from Postman showing the Movie CRUD operations worki
 
 ### Infrastructure (AWS)
 
-- **VPC**: Custom VPC (10.0.0.0/16) spanning multiple availability zones
+- **Separate Environments**:
+  - **Staging**: Complete EKS cluster in its own VPC.
+  - **Production**: Separate EKS cluster in its own VPC.
+  - Each environment is completely isolated with identical architecture, but different resource configurations
+- **VPC**: Custom VPC spanning multiple availability zones for each environment
 - **EKS Cluster**: Managed Kubernetes with nodes in private subnets
 - **Multi-AZ Setup**: Resources distributed across eu-north-1a and eu-north-1b for high availability
 - **Load Balancing**: Application Load Balancer with HTTPS support
@@ -236,11 +241,17 @@ cp .env.example .env
 docker-compose up -d
 ```
 
-Wait for GitLab to start (this may take a few minutes). Access the GitLab UI at http://localhost (or your configured URL) and set your initial admin password.
+Wait for GitLab to start (this may take a few minutes). Access the GitLab UI at http://192.168.56.10 (or your configured URL). Do not set base url as `http://localhost`. It messes up Docker container communication.
+
+- Initial password can be obtained from `config` folder.
+
+```bash
+cat config/initial_root_password
+```
 
 #### 2. Configure Ansible for GitLab Setup
 
-Configure your GitLab API token and other variables:
+Configure your GitLab API token and other variables.
 
 ```bash
 cd ansible
@@ -249,24 +260,82 @@ cp group_vars/vault.yml.example group_vars/vault.yml
 # Edit the .yml files to add your GitLab token and other variables
 ```
 
-#### 3. Run the GitLab Setup Playbook
+Be sure to encrypt the `vault.yml`.
 
 ```bash
-cd ansible
-ansible-playbook gitlab_setup.yml
+ansible-vault encrypt group_vars/vault.yml
 ```
 
-This will:
+#### 3. Setup a Python virtual environment to run Ansible
 
-- Create repositories for each service
-- Configure CI/CD variables
-- Set up webhooks and access permissions
-- Initialize repositories with code and CI/CD configuration
+While in `/ansible` folder, create a virtual environment
 
-#### 4. Set up Infrastructure
+```bash
+python3.13 -m venv ~/.ansible-venv
+~/.ansible_venv/bin/activate
+```
 
-- Rename `/terraform/terraform.tfvars.example` to `/terraform/terraform.tfvars` and fill it with information.
-- For testing, `t3.medium` instance can be used. It allows just enough pods to run the project on minimum load. `t3.large` is needed for full load.
+Install dependencies
+
+```bash
+pip install ansible python-gitlab
+```
+
+Export the interpreter path in your playbook's `inventory/localhost`
+
+```bash
+[local]
+localhost ansible_connection=local
+```
+
+#### 4. Set up S3 Terraform state backend
+
+Configure and fill `tfstate` variables for backend:
+
+```bash
+cp terraform.tfvars.example terraform.tfvars
+```
+
+Ensure your AWS IAM user has the following permissions:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "SetupIAM",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetUser",
+        "iam:CreatePolicy",
+        "iam:GetPolicy",
+        "iam:GetPolicyVersion",
+        "iam:AttachUserPolicy",
+        "iam:ListAttachedUserPolicies",
+        "iam:ListPolicyVersions",
+        "iam:DetachUserPolicy",
+        "iam:DeletePolicy",
+        "iam:DeletePolicyVersion",
+        "iam:CreatePolicyVersion",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:ListAttachedGroupPolicies",
+        "iam:CreateGroup",
+        "iam:GetGroup",
+        "iam:DeleteGroup",
+        "iam:AddUserToGroup",
+        "iam:AttachGroupPolicy",
+        "iam:ListGroupsForUser",
+        "iam:DetachGroupPolicy",
+        "iam:RemoveUserFromGroup",
+        "iam:UpdateGroup",
+        "iam:ListEntitiesForPolicy",
+        "iam:ListPolicies"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
 
 a. **Initialize Terraform state backend**:
 
@@ -276,33 +345,47 @@ terraform init
 terraform apply
 ```
 
-b. **Deploy main infrastructure**:
+#### 5. Run the GitLab Setup Playbook
 
 ```bash
-cd ..
-terraform init
-terraform apply
+ansible-playbook -i inventory/localhost gitlab_setup.yml --ask-vault-pass
 ```
 
-c. **Configure kubectl and Helm**:
+This will:
 
-```bash
-./scripts/configure-kubectl-helm.sh
-```
+- Create repositories for each service
+- Configure CI/CD variables
+- Set up webhooks and access permissions
+- Initialize repositories with code and CI/CD configuration
 
-#### 5. Use the CI/CD Pipeline or Deploy Manually
+#### 6. Use the CI/CD Pipeline to deploy everything
 
-CI/CD will automatically deploy changes when you push to the repositories. You want to pause microservice pipelines and let the infrastructure pipeline run first to set everything up.
+CI/CD will automatically deploy changes when you push to the repositories.
+
+**You want to pause/cancel microservice pipelines and let the infrastructure pipeline run first to set everything up.**
 
 ## CI/CD Pipeline Details
 
-### Pipeline Stages
+The project uses two distinct pipeline types:
 
-1. **Build**: Compiles code, runs linting, and unit tests
-2. **Test**: Runs integration test. Just a simulated step. No actual tests currently.
-3. **Deploy to Staging**: Automatic deployment to staging environment
-4. **Manual Approval**: Required before production deployment
-5. **Deploy to Production**: Deployment to production environment
+### Service Pipeline Stages (API Gateway, Inventory, Billing)
+
+1. **Build**: Compiles the application code using Node.js, installs dependencies via npm, and runs a verification script to ensure all dependencies are installed correctly.
+2. **Test**: Executes the test suite for the service.
+3. **Scan**: Performs code quality analysis using tools like JShint and runs security scans (SAST) to identify potential vulnerabilities in the codebase.
+4. **Containerize**: Builds Docker container images, tags them with the commit SHA and 'latest', authenticates with Docker Hub, and pushes the images to the repository.
+5. **Deploy to Staging**: Configures kubectl to connect to the staging EKS cluster, creates necessary Kubernetes secrets from CI variables, and deploys the application with persistent volumes.
+6. **Approval**: Adds a manual approval gate that requires explicit authorization before the production deployment can proceed.
+7. **Deploy to Production**: Similar to staging deployment but targets the production EKS cluster and namespace, using production-specific environment variables and secrets.
+
+### Infrastructure Pipeline Stages (Terraform)
+
+1. **Init**: Initializes Terraform with the proper backend configuration for state management, dynamically generates environment-specific tfvars files, and prepares the working directory.
+2. **Validate**: Performs syntax validation on Terraform files, runs `terraform fmt` to check formatting, and checks for potential hardcoded secrets in the codebase.
+3. **Plan**: Creates and displays an execution plan for the staging environment infrastructure changes, showing what resources would be created, modified, or destroyed.
+4. **Apply Staging**: Applies the approved plan to the staging environment, configures kubectl to connect to the EKS cluster, and creates necessary Kubernetes resources like namespaces and ingress.
+5. **Approval**: Implements a manual approval gate requiring explicit authorization before any changes can be applied to the production infrastructure.
+6. **Apply Production**: Plans and applies changes to the production environment, similarly configuring kubectl, setting up the production namespace, and applying ingress configurations to the production cluster.
 
 ### Repository Structure
 
@@ -312,7 +395,6 @@ Each service repository created by the Ansible playbook includes:
 - Dockerfile for containerization
 - CI/CD configuration (.gitlab-ci.yml)
 - Kubernetes manifests for deployment
-- Documentation and README files
 
 ## API Documentation
 
@@ -353,16 +435,12 @@ To clean up resources:
 
 1. **Remove application resources**:
 
-   ```bash
-   ./scripts/cleanup-k8s-resources.sh
-   ```
+   Done via Infrastructure pipeline. Run `cleanup-prod` and then `cleanup-staging`. <br>Pipeline cleans up all the Kubernetes resources before using `terraform destroy`.<br> No AWS resources should stay up when jobs finish.
 
-2. **Destroy infrastructure**:
+2. **Destroy S3 Terraform State backend**:
+   While in `terraform/bootstrap` directory, run:
 
    ```bash
-   cd terraform
-   terraform destroy
-   cd bootstrap
    terraform destroy
    ```
 
@@ -393,12 +471,10 @@ To clean up resources:
 - **Custom Domain**: Register a custom domain name to replace the self-signed certificate with a properly validated AWS ACM certificate
 - **Amazon CloudFront**: Add CloudFront content delivery network (CDN) for faster content delivery
 - **AWS WAF Integration**: Add AWS Web Application Firewall for additional protection against common exploits
-- **Secret Management**: Migrate from Kubernetes Secrets to AWS Secrets Manager or HashiCorp Vault
 
 ### CI/CD Improvements
 
 - **Automated Rollbacks**: Add automated rollback capability if deployments fail
-- **Canary Releases**: Implement canary deployment strategy for gradual rollouts
 - **Extended Test Coverage**: Add performance and security testing to the CI/CD pipeline
 
 ## License
