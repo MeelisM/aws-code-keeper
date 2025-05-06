@@ -57,7 +57,7 @@ This project features a complete GitLab CI/CD setup for automated testing, build
 
 ### Kubernetes Resources
 
-The following image shows the running Kubernetes services and pods in the cluster:
+The following image shows the running Kubernetes services and pods in staging and production environments:
 
 ![Kubernetes Resources](./images/pods-and-ingress.png)
 
