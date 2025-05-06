@@ -296,47 +296,6 @@ Configure and fill `tfstate` variables for backend:
 cp terraform.tfvars.example terraform.tfvars
 ```
 
-Ensure your AWS IAM user has the following permissions:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Sid": "SetupIAM",
-      "Effect": "Allow",
-      "Action": [
-        "iam:GetUser",
-        "iam:CreatePolicy",
-        "iam:GetPolicy",
-        "iam:GetPolicyVersion",
-        "iam:AttachUserPolicy",
-        "iam:ListAttachedUserPolicies",
-        "iam:ListPolicyVersions",
-        "iam:DetachUserPolicy",
-        "iam:DeletePolicy",
-        "iam:DeletePolicyVersion",
-        "iam:CreatePolicyVersion",
-        "iam:UpdateAssumeRolePolicy",
-        "iam:ListAttachedGroupPolicies",
-        "iam:CreateGroup",
-        "iam:GetGroup",
-        "iam:DeleteGroup",
-        "iam:AddUserToGroup",
-        "iam:AttachGroupPolicy",
-        "iam:ListGroupsForUser",
-        "iam:DetachGroupPolicy",
-        "iam:RemoveUserFromGroup",
-        "iam:UpdateGroup",
-        "iam:ListEntitiesForPolicy",
-        "iam:ListPolicies"
-      ],
-      "Resource": "*"
-    }
-  ]
-}
-```
-
 a. **Initialize Terraform state backend**:
 
 ```bash
