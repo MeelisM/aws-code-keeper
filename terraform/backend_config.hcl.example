@@ -1,5 +1,5 @@
-bucket         = "your-terraform-state-bucket"          # Set manually in ansible/group_vars/vault.yml
+bucket         = "your-terraform-state-bucket"          # This file will be used to automatically set bucket, key and region in gitlab-ci.yml before_script
 key            = "terraform/state"
-region         = "eu-north-1"                           # Set manually in ansible/group_vars/vault.yml
+region         = "eu-north-1"                           
 use_lockfile   = true
 encrypt        = true

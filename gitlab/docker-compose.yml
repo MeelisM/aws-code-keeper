@@ -13,7 +13,7 @@ services:
         # Disable the container registry
         registry['enable'] = false
 
-        # Optimize
+        # Optimize memory usage
         postgresql['shared_buffers'] = "256MB"
         postgresql['max_connections'] = 100
         puma['worker_processes'] = 1
