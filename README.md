@@ -147,7 +147,7 @@ code-keeper/
 
 - Docker and Docker Compose
 - AWS cli
-- Terraform v1.11.4+
+- Terraform v1.11.4+ (if you wish local access to IaC, just in case)
 - Ansible
 - kubectl
 - Python3.13
