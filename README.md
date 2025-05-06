@@ -146,11 +146,11 @@ code-keeper/
 ### Prerequisites
 
 - Docker and Docker Compose
-- AWS account
+- AWS cli
 - Terraform v1.11.4+
 - Ansible
 - kubectl
-- Python3
+- Python3.13
 
 ### Required AWS Permissions
 
