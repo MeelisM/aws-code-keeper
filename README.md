@@ -212,7 +212,7 @@ docker-compose up -d
 
 Wait for GitLab to start (this may take a few minutes). Access the GitLab UI at http://192.168.56.10 (or your configured URL). Do not set base url as `http://localhost`. It messes up Docker container communication.
 
-- Initial password can be obtained from `config` folder.
+Initial password can be obtained from `config` folder.
 
 ```bash
 cat config/initial_root_password
