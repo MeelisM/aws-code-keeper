@@ -56,7 +56,7 @@ build:
     - npm ci
 
     # Check for essential dependencies with proper error handling
-    - echo "Checking for essential dependencies..."
+    - echo "Checking for essential dependencies"
 
     # Check for sequelize-cli - critical for database migrations
     - echo "Checking for sequelize-cli..."
@@ -82,7 +82,7 @@ build:
         fi
       }
 
-    # Check for critical modules (only production dependencies)
+    # Check for critical modules
     - check_module "express" || exit 1
     - check_module "sequelize" || exit 1
     - check_module "pg" || exit 1
@@ -314,6 +314,12 @@ deploy-staging:
         exit 1
       fi
 
+    # Ensure namespace exists (defensive check)
+    - |
+      echo "Ensuring ${STAGING_KUBE_NAMESPACE} namespace exists..."
+      kubectl get namespace ${STAGING_KUBE_NAMESPACE} || kubectl create namespace ${STAGING_KUBE_NAMESPACE}
+      echo "${STAGING_KUBE_NAMESPACE} namespace is ready"
+
     # Create Kubernetes secrets from GitLab CI variables
     - |
       kubectl create secret generic billing-secrets \
@@ -334,7 +340,7 @@ deploy-staging:
         -n ${STAGING_KUBE_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
     - kubectl get secret billing-secrets -o yaml -n ${STAGING_KUBE_NAMESPACE}
     - echo "Deploying to staging environment on EKS"
-    # Apply Kubernetes manifests individually instead of using kustomize
+    # Apply Kubernetes manifests individually
     - echo "Applying Kubernetes manifests individually..."
     # Replace Docker Hub image variables in manifests
     - sed -i "s|\${DOCKER_HUB_REPO}|${DOCKER_HUB_REPO}|g" manifests/billing-app.yaml
@@ -404,6 +410,12 @@ deploy-prod:
         exit 1
       fi
 
+    # Ensure namespace exists (defensive check)
+    - |
+      echo "Ensuring ${PROD_KUBE_NAMESPACE} namespace exists"
+      kubectl get namespace ${PROD_KUBE_NAMESPACE} || kubectl create namespace ${PROD_KUBE_NAMESPACE}
+      echo "${PROD_KUBE_NAMESPACE} namespace is ready"
+
     # Create Kubernetes secrets from GitLab CI variables
     - |
       kubectl create secret generic billing-secrets \
@@ -422,7 +434,10 @@ deploy-prod:
         --from-literal=HOST=${PROD_BILLING_HOST} \
         --from-literal=PORT=${PROD_BILLING_PORT} \
         -n ${PROD_KUBE_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+    - kubectl get secret billing-secrets -o yaml -n ${PROD_KUBE_NAMESPACE}
     - echo "Deploying to production environment on EKS"
+    # Apply Kubernetes manifests individually
+    - echo "Applying Kubernetes manifests individually..."
     # Replace image placeholders in manifests
     - sed -i "s|\${DOCKER_HUB_REPO}|${DOCKER_HUB_REPO}|g" manifests/billing-app.yaml
     - sed -i "s|\${CI_COMMIT_SHORT_SHA}|${CI_COMMIT_SHORT_SHA}|g" manifests/billing-app.yaml
@@ -431,10 +446,26 @@ deploy-prod:
     - sed -i "s|\${DOCKER_HUB_REPO}|${DOCKER_HUB_REPO}|g" manifests/billing-db.yaml
     - sed -i "s|\${CI_COMMIT_SHORT_SHA}|${CI_COMMIT_SHORT_SHA}|g" manifests/billing-db.yaml
 
-    # Apply Kubernetes manifests
+    # Apply the database manifests first
+    - echo "Deploying billing database"
+    - kubectl apply -f manifests/billing-db.yaml -n ${PROD_KUBE_NAMESPACE}
+
+    # Wait for the database to be ready
+    - echo "Waiting for billing database to be ready"
+    - kubectl rollout status statefulset/billing-db -n ${PROD_KUBE_NAMESPACE} --timeout=300s
+
+    # Delete the old StatefulSet without deleting the pods
+    - echo "Deleting old StatefulSet without deleting pods"
+    - kubectl delete statefulset billing-app -n ${PROD_KUBE_NAMESPACE} --cascade=orphan || true
+
+    # Apply the new StatefulSet definition
+    - echo "Applying new StatefulSet and Service"
     - kubectl apply -f manifests/billing-db.yaml -n ${PROD_KUBE_NAMESPACE}
     - kubectl apply -f manifests/billing-app.yaml -n ${PROD_KUBE_NAMESPACE}
-    - kubectl rollout status statefulset/billing-app -n ${PROD_KUBE_NAMESPACE} --timeout=300s
+
+    # Increase the timeout for the rollout
+    - echo "Waiting for deployment to complete (10 minute timeout)..."
+    - kubectl rollout status statefulset/billing-app -n ${PROD_KUBE_NAMESPACE} --timeout=600s
 
   environment:
     name: production

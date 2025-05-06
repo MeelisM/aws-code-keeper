@@ -2,9 +2,8 @@
 set -e
 
 # Default values
-CLUSTER_NAME="${AWS_CLUSTER_NAME}"
-REGION="${AWS_DEFAULT_REGION}"
 ENVIRONMENT="${STAGING_KUBE_NAMESPACE:-staging}"
+REGION="${AWS_DEFAULT_REGION}"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -32,6 +31,17 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Determine which cluster to use based on environment
+if [ -z "${CLUSTER_NAME}" ]; then
+  if [ "${ENVIRONMENT}" == "production" ]; then
+    CLUSTER_NAME="${AWS_CLUSTER_NAME}-production"
+    echo "Using production cluster: ${CLUSTER_NAME}"
+  else
+    CLUSTER_NAME="${AWS_CLUSTER_NAME}-staging"
+    echo "Using staging cluster: ${CLUSTER_NAME}"
+  fi
+fi
+
 # Verify AWS credentials are available
 echo "Verifying AWS credentials..."
 if [ -z "${AWS_ACCESS_KEY_ID}" ] || [ -z "${AWS_SECRET_ACCESS_KEY}" ]; then
@@ -46,15 +56,14 @@ fi
 export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
 export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
 export AWS_DEFAULT_REGION="${REGION}"
-export AWS_CLUSTER_NAME="${CLUSTER_NAME}"
 
 # Check for cluster name
 if [ -z "${CLUSTER_NAME}" ]; then
-  echo "ERROR: No cluster name provided. Set AWS_CLUSTER_NAME in Ansible Vault"
+  echo "ERROR: No cluster name provided. Set AWS_PROD_CLUSTER_NAME or AWS_STAGING_CLUSTER_NAME in GitLab CI/CD variables"
   exit 1
 fi
 
-echo "Configuring kubectl for cluster: ${CLUSTER_NAME} in region: ${REGION}"
+echo "Configuring kubectl for cluster: ${CLUSTER_NAME} in region: ${REGION} for environment: ${ENVIRONMENT}"
 echo "Using AWS credentials with key ID: ${AWS_ACCESS_KEY_ID:0:5}..."
 
 # Test AWS credentials

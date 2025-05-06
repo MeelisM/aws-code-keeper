@@ -2,41 +2,149 @@
 # GitLab Connection Settings
 
 # You MUST update this GitLab API token before running the playbook
-# For testing, you can generate a personal access token from your GitLab instance:
+# You can generate a personal access token from your GitLab instance:
 # 1. Log in to GitLab as root user
 # 2. Go to User Settings > Access Tokens
 # 3. Create a token with 'api' scope
-gitlab_api_token: "your-gitlab-api-token-here"
+gitlab_api_token: "your-api-token" # Replace with your actual token
 
 # Host machine URL for GitLab
 # This should be the URL where GitLab is accessible
-gitlab_url: "http://your-gitlab-url"
+gitlab_url: "http://192.168.1.101" # Replace with your actual GitLab URL
 
 # Set to true if using HTTPS with a valid certificate
 gitlab_validate_certs: false
 
 # Git settings for repository initialization
 # For testing, you can use any email and name - these don't need to exist
-git_user_email: "your.email@example.com"
-git_user_name: "Your Name"
+git_user_email: "test@example.com"
+git_user_name: "Test User"
 
 # SSH key configuration
 # Path to the public SSH key to register with GitLab
 # Change this value to match your actual SSH key location if different
-ssh_key_path: "~/.ssh/id_ed25519.pub"
+ssh_key_path: "~/.ssh/id_ed25519.pub" # Replace with your actual SSH key path
 ssh_key_title: "Ansible automation key"
 
-# GitLab registry URL - used for Docker image storage
-# This should be the registry URL for your GitLab instance
-# For Docker image tags, we need to remove the protocol prefix
-gitlab_registry_url_with_protocol: "{{ gitlab_url }}:5050"
-gitlab_registry_url: "{{ gitlab_url | replace('http://', '') | replace('https://', '') }}:5050"
+# API Gateway CI/CD variables - mapping from vault variables to GitLab CI variables
+api_gateway_vars:
+  # Staging environment variables
+  - var_name: "STAGING_API_RABBITMQ_HOST"
+    var_value: "{{ api_gateway.staging.RABBITMQ_HOST }}"
+  - var_name: "STAGING_API_RABBITMQ_PORT"
+    var_value: "{{ api_gateway.staging.RABBITMQ_PORT }}"
+  - var_name: "STAGING_API_RABBITMQ_USER"
+    var_value: "{{ api_gateway.staging.RABBITMQ_USER }}"
+  - var_name: "STAGING_API_RABBITMQ_PASSWORD"
+    var_value: "{{ api_gateway.staging.RABBITMQ_PASSWORD }}"
+    masked: true
+  - var_name: "STAGING_API_RABBITMQ_QUEUE"
+    var_value: "{{ api_gateway.staging.RABBITMQ_QUEUE }}"
+  - var_name: "STAGING_API_RABBITMQ_API_URL"
+    var_value: "{{ api_gateway.staging.RABBITMQ_API_URL }}"
+  - var_name: "STAGING_API_INVENTORY_URL"
+    var_value: "{{ api_gateway.staging.INVENTORY_URL }}"
+  - var_name: "STAGING_API_GATEWAY_HOST"
+    var_value: "{{ api_gateway.staging.HOST }}"
+  - var_name: "STAGING_API_GATEWAY_PORT"
+    var_value: "{{ api_gateway.staging.PORT }}"
 
-# GitLab registry password - use the same API token for registry authentication
-gitlab_registry_password: "{{ gitlab_api_token }}"
+  # Production environment variables
+  - var_name: "PROD_API_RABBITMQ_HOST"
+    var_value: "{{ api_gateway.prod.RABBITMQ_HOST }}"
+  - var_name: "PROD_API_RABBITMQ_PORT"
+    var_value: "{{ api_gateway.prod.RABBITMQ_PORT }}"
+  - var_name: "PROD_API_RABBITMQ_USER"
+    var_value: "{{ api_gateway.prod.RABBITMQ_USER }}"
+  - var_name: "PROD_API_RABBITMQ_PASSWORD"
+    var_value: "{{ api_gateway.prod.RABBITMQ_PASSWORD }}"
+    masked: true
+  - var_name: "PROD_API_RABBITMQ_QUEUE"
+    var_value: "{{ api_gateway.prod.RABBITMQ_QUEUE }}"
+  - var_name: "PROD_API_RABBITMQ_API_URL"
+    var_value: "{{ api_gateway.prod.RABBITMQ_API_URL }}"
+  - var_name: "PROD_API_INVENTORY_URL"
+    var_value: "{{ api_gateway.prod.INVENTORY_URL }}"
+  - var_name: "PROD_API_GATEWAY_HOST"
+    var_value: "{{ api_gateway.prod.HOST }}"
+  - var_name: "PROD_API_GATEWAY_PORT"
+    var_value: "{{ api_gateway.prod.PORT }}"
 
-api_gateway_vars: []
-billing_service_vars: []
+# Billing Service CI/CD variables - mapping from vault variables to GitLab CI variables
+billing_service_vars:
+  # Staging environment variables
+  - var_name: "STAGING_BILLING_DB_HOST"
+    var_value: "{{ billing_service.staging.DB_HOST }}"
+  - var_name: "STAGING_BILLING_DB_PORT"
+    var_value: "{{ billing_service.staging.DB_PORT }}"
+  - var_name: "STAGING_BILLING_DB_NAME"
+    var_value: "{{ billing_service.staging.DB_NAME }}"
+  - var_name: "STAGING_BILLING_DB_USER"
+    var_value: "{{ billing_service.staging.DB_USER }}"
+  - var_name: "STAGING_BILLING_DB_PASSWORD"
+    var_value: "{{ billing_service.staging.DB_PASSWORD }}"
+    masked: true
+  - var_name: "STAGING_BILLING_DB_NAME"
+    var_value: "{{ billing_service.staging.DB_NAME }}"
+  - var_name: "STAGING_BILLING_POSTGRES_USER"
+    var_value: "{{ billing_service.staging.POSTGRES_USER }}"
+  - var_name: "STAGING_BILLING_POSTGRES_PASSWORD"
+    var_value: "{{ billing_service.staging.POSTGRES_PASSWORD }}"
+    masked: true
+  - var_name: "STAGING_BILLING_RABBITMQ_HOST"
+    var_value: "{{ billing_service.staging.RABBITMQ_HOST }}"
+  - var_name: "STAGING_BILLING_RABBITMQ_PORT"
+    var_value: "{{ billing_service.staging.RABBITMQ_PORT }}"
+  - var_name: "STAGING_BILLING_RABBITMQ_USER"
+    var_value: "{{ billing_service.staging.RABBITMQ_USER }}"
+  - var_name: "STAGING_BILLING_RABBITMQ_PASSWORD"
+    var_value: "{{ billing_service.staging.RABBITMQ_PASSWORD }}"
+    masked: true
+  - var_name: "STAGING_BILLING_RABBITMQ_QUEUE"
+    var_value: "{{ billing_service.staging.RABBITMQ_QUEUE }}"
+  - var_name: "STAGING_BILLING_RABBITMQ_API_URL"
+    var_value: "{{ billing_service.staging.RABBITMQ_API_URL }}"
+  - var_name: "STAGING_BILLING_HOST"
+    var_value: "{{ billing_service.staging.HOST }}"
+  - var_name: "STAGING_BILLING_PORT"
+    var_value: "{{ billing_service.staging.PORT }}"
+
+  # Production environment variables
+  - var_name: "PROD_BILLING_DB_HOST"
+    var_value: "{{ billing_service.prod.DB_HOST }}"
+  - var_name: "PROD_BILLING_DB_PORT"
+    var_value: "{{ billing_service.prod.DB_PORT }}"
+  - var_name: "PROD_BILLING_DB_NAME"
+    var_value: "{{ billing_service.prod.DB_NAME }}"
+  - var_name: "PROD_BILLING_DB_USER"
+    var_value: "{{ billing_service.prod.DB_USER }}"
+  - var_name: "PROD_BILLING_DB_PASSWORD"
+    var_value: "{{ billing_service.prod.DB_PASSWORD }}"
+    masked: true
+  - var_name: "PROD_BILLING_DB_NAME"
+    var_value: "{{ billing_service.prod.DB_NAME }}"
+  - var_name: "PROD_BILLING_POSTGRES_USER"
+    var_value: "{{ billing_service.prod.POSTGRES_USER }}"
+  - var_name: "PROD_BILLING_POSTGRES_PASSWORD"
+    var_value: "{{ billing_service.prod.POSTGRES_PASSWORD }}"
+    masked: true
+  - var_name: "PROD_BILLING_RABBITMQ_HOST"
+    var_value: "{{ billing_service.prod.RABBITMQ_HOST }}"
+  - var_name: "PROD_BILLING_RABBITMQ_PORT"
+    var_value: "{{ billing_service.prod.RABBITMQ_PORT }}"
+  - var_name: "PROD_BILLING_RABBITMQ_USER"
+    var_value: "{{ billing_service.prod.RABBITMQ_USER }}"
+  - var_name: "PROD_BILLING_RABBITMQ_PASSWORD"
+    var_value: "{{ billing_service.prod.RABBITMQ_PASSWORD }}"
+    masked: true
+  - var_name: "PROD_BILLING_RABBITMQ_QUEUE"
+    var_value: "{{ billing_service.prod.RABBITMQ_QUEUE }}"
+  - var_name: "PROD_BILLING_RABBITMQ_API_URL"
+    var_value: "{{ billing_service.prod.RABBITMQ_API_URL }}"
+  - var_name: "PROD_BILLING_HOST"
+    var_value: "{{ billing_service.prod.HOST }}"
+  - var_name: "PROD_BILLING_PORT"
+    var_value: "{{ billing_service.prod.PORT }}"
 
 # Inventory Service CI/CD variables - mapping from vault variables to GitLab CI variables
 inventory_service_vars:
@@ -52,14 +160,52 @@ inventory_service_vars:
   - var_name: "STAGING_INVENTORY_DB_PASSWORD"
     var_value: "{{ inventory_service.staging.DB_PASSWORD }}"
     masked: true
-  - var_name: "STAGING_POSTGRES_USER"
+  - var_name: "STAGING_INVENTORY_POSTGRES_USER"
     var_value: "{{ inventory_service.staging.POSTGRES_USER }}"
-  - var_name: "STAGING_POSTGRES_PASSWORD"
+  - var_name: "STAGING_INVENTORY_POSTGRES_PASSWORD"
     var_value: "{{ inventory_service.staging.POSTGRES_PASSWORD }}"
     masked: true
-  - var_name: "STAGING_HOST"
+  - var_name: "STAGING_INVENTORY_HOST"
     var_value: "{{ inventory_service.staging.HOST }}"
-  - var_name: "STAGING_PORT"
+  - var_name: "STAGING_INVENTORY_PORT"
     var_value: "{{ inventory_service.staging.PORT }}"
 
-global_vars: []
+  # Production environment variables
+  - var_name: "PROD_INVENTORY_DB_HOST"
+    var_value: "{{ inventory_service.prod.DB_HOST }}"
+  - var_name: "PROD_INVENTORY_DB_PORT"
+    var_value: "{{ inventory_service.prod.DB_PORT }}"
+  - var_name: "PROD_INVENTORY_DB_NAME"
+    var_value: "{{ inventory_service.prod.DB_NAME }}"
+  - var_name: "PROD_INVENTORY_DB_USER"
+    var_value: "{{ inventory_service.prod.DB_USER }}"
+  - var_name: "PROD_INVENTORY_DB_PASSWORD"
+    var_value: "{{ inventory_service.prod.DB_PASSWORD }}"
+    masked: true
+  - var_name: "PROD_INVENTORY_POSTGRES_USER"
+    var_value: "{{ inventory_service.prod.POSTGRES_USER }}"
+  - var_name: "PROD_INVENTORY_POSTGRES_PASSWORD"
+    var_value: "{{ inventory_service.prod.POSTGRES_PASSWORD }}"
+    masked: true
+  - var_name: "PROD_INVENTORY_HOST"
+    var_value: "{{ inventory_service.prod.HOST }}"
+  - var_name: "PROD_INVENTORY_PORT"
+    var_value: "{{ inventory_service.prod.PORT }}"
+
+global_vars:
+  # AWS and Kubernetes configuration
+  - var_name: "AWS_CLUSTER_NAME"
+    var_value: "{{ global.AWS_CLUSTER_NAME }}"
+  - var_name: "AWS_DEFAULT_REGION"
+    var_value: "{{ global.AWS_DEFAULT_REGION }}"
+  - var_name: "AWS_ACCESS_KEY_ID"
+    var_value: "{{ global.AWS_ACCESS_KEY_ID }}"
+    masked: true
+  - var_name: "AWS_SECRET_ACCESS_KEY"
+    var_value: "{{ global.AWS_SECRET_ACCESS_KEY }}"
+    masked: true
+  - var_name: "AWS_STATE_BUCKET"
+    var_value: "{{ global.AWS_STATE_BUCKET }}"
+    masked: true
+  - var_name: "CI_SERVER_URL"
+    var_value: "{{ global.CI_SERVER_URL }}"

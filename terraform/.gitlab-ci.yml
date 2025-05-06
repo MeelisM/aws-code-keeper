@@ -25,7 +25,7 @@ variables:
     - terraform --version
     # Create backend_config.hcl from the example
     - |
-      echo "Creating backend_config.hcl from example file..."
+      echo "Creating backend_config.hcl from example file"
       if [ -f "backend_config.hcl.example" ]; then
         # Copy the example file as a starting point
         cp backend_config.hcl.example backend_config.hcl
@@ -139,7 +139,7 @@ validate:
     - echo "Validating Terraform files..."
     - terraform fmt -check -recursive
     - terraform validate
-    # Custom check for security best practices
+    # Custom check for security best practices (TBA)
     - echo "Checking for hardcoded secrets..."
     - find . -type f -name "*.tf" -exec grep -l "access_key\|secret_key\|password\|token" {} \; | tee potential_secrets.txt
     - |
@@ -170,7 +170,7 @@ plan-staging:
         echo "Warning: ${STAGING_TF_VAR_FILE} not found, using default variables"
         terraform plan -out=staging.tfplan
       fi
-    # Create a human-readable output of the plan
+    # Create a an output of the plan
     - terraform show -no-color staging.tfplan > staging-plan-output.txt
   artifacts:
     paths:
@@ -190,13 +190,13 @@ apply-staging:
   dependencies:
     - plan-staging
   script:
-    - echo "Applying changes to staging environment..."
+    - echo "Applying changes to staging environment"
     - terraform workspace select staging || terraform workspace new staging
     - terraform apply -auto-approve staging.tfplan
     - terraform output -json > terraform-output-staging.json
 
     # Install kubectl to apply the generated Ingress manifest
-    - echo "Installing kubectl to apply Ingress manifest..."
+    - echo "Installing kubectl to apply Ingress manifest"
     - apk add --no-cache curl
     - curl -LO "https://dl.k8s.io/release/v1.29.4/bin/linux/amd64/kubectl"
     - chmod +x kubectl && mv kubectl /usr/local/bin/
@@ -213,6 +213,12 @@ apply-staging:
       CLUSTER_NAME="${TF_VAR_STAGING_cluster_name}"
       echo "Using EKS cluster name: $CLUSTER_NAME"
       aws eks update-kubeconfig --name $CLUSTER_NAME --region ${AWS_DEFAULT_REGION}
+
+    # Create the staging namespace if it doesn't exist
+    - |
+      echo "Ensuring staging namespace exists..."
+      kubectl get namespace staging || kubectl create namespace staging
+      echo "Staging namespace is ready"
 
     # Apply the generated Ingress manifest
     - |
@@ -272,7 +278,7 @@ apply-prod:
     - validate
     - approval-prod
   script:
-    - echo "Planning and applying changes to production environment..."
+    - echo "Planning and applying changes to production environment"
     - terraform workspace select production || terraform workspace new production
     - |
       if [ -f "${PRODUCTION_TF_VAR_FILE}" ]; then
@@ -283,31 +289,36 @@ apply-prod:
         terraform plan -out=production.tfplan
       fi
     - terraform apply -auto-approve production.tfplan
-    # Export outputs for later use
     - terraform output -json > terraform-output-production.json
 
     # Install kubectl to apply the generated Ingress manifest
-    - echo "Installing kubectl to apply Ingress manifest..."
+    - echo "Installing kubectl to apply Ingress manifest"
     - apk add --no-cache curl
     - curl -LO "https://dl.k8s.io/release/v1.29.4/bin/linux/amd64/kubectl"
     - chmod +x kubectl && mv kubectl /usr/local/bin/
 
     # Install AWS CLI using Alpine's package manager
-    - echo "Installing AWS CLI..."
+    - echo "Installing AWS CLI"
     - apk add --no-cache aws-cli
     - aws --version
 
     # Configure kubectl using AWS credentials and environment variables
     - |
-      echo "Configuring kubectl for EKS cluster..."
+      echo "Configuring kubectl for EKS cluster"
       # Use environment variable directly instead of terraform output
       CLUSTER_NAME="${TF_VAR_PROD_cluster_name}"
       echo "Using EKS cluster name: $CLUSTER_NAME"
       aws eks update-kubeconfig --name $CLUSTER_NAME --region ${AWS_DEFAULT_REGION}
 
+    # Create the production namespace if it doesn't exist
+    - |
+      echo "Ensuring production namespace exists..."
+      kubectl get namespace production || kubectl create namespace production
+      echo "Production namespace is ready"
+
     # Apply the generated Ingress manifest
     - |
-      echo "Applying generated API Gateway Ingress manifest to production environment..."
+      echo "Applying generated API Gateway Ingress manifest to production environment"
       PROCESSED_INGRESS_PATH="../manifests/networking/api-gateway-ingress.yaml"
       if [ -f "$PROCESSED_INGRESS_PATH" ]; then
         echo "Found processed Ingress manifest at $PROCESSED_INGRESS_PATH"
@@ -356,6 +367,56 @@ cleanup-staging:
   script:
     - |
       echo "WARNING: This will DESTROY all resources in the staging environment!!!"
+
+    # Install kubectl and AWS CLI to clean up Kubernetes resources
+    - echo "Installing kubectl and AWS CLI for Kubernetes cleanup"
+    - apk add --no-cache curl aws-cli
+    - curl -LO "https://dl.k8s.io/release/v1.29.4/bin/linux/amd64/kubectl"
+    - chmod +x kubectl && mv kubectl /usr/local/bin/
+    - kubectl version --client
+
+    # Configure kubectl for the staging cluster
+    - |
+      echo "Configuring kubectl for staging EKS cluster"
+      CLUSTER_NAME="${TF_VAR_STAGING_cluster_name}"
+      echo "Using EKS cluster name: $CLUSTER_NAME"
+      aws eks update-kubeconfig --name $CLUSTER_NAME --region ${AWS_DEFAULT_REGION}
+
+    # Clean up all resources in the staging namespace
+    - |
+      echo "Cleaning up Kubernetes resources in staging namespace..."
+      # First check if namespace exists
+      if kubectl get namespace staging &>/dev/null; then
+        echo "Deleting all deployments in staging namespace"
+        kubectl delete deployments --all -n staging --timeout=300s --wait=true || true
+        
+        echo "Deleting all statefulsets in staging namespace"
+        kubectl delete statefulsets --all -n staging --timeout=300s --wait=true || true
+        
+        echo "Deleting all services in staging namespace"
+        kubectl delete services --all -n staging --timeout=300s --wait=true || true
+        
+        echo "Deleting all ingresses in staging namespace"
+        kubectl delete ingress --all -n staging --timeout=300s --wait=true || true
+        
+        echo "Deleting all configmaps in staging namespace"
+        kubectl delete configmaps --all -n staging --timeout=300s --wait=true || true
+        
+        echo "Deleting all secrets in staging namespace"
+        kubectl delete secrets --all -n staging --timeout=300s --wait=true || true
+        
+        echo "Deleting all persistent volume claims in staging namespace"
+        kubectl delete pvc --all -n staging --timeout=300s --wait=true || true
+        
+        echo "Deleting all persistent volumes associated with staging namespace"
+        kubectl get pv -o json | jq -r '.items[] | select(.spec.claimRef.namespace == "staging") | .metadata.name' | xargs -I{} kubectl delete pv {} --timeout=300s || true
+        
+        echo "Kubernetes resources cleanup completed for staging namespace"
+      else
+        echo "Staging namespace not found, skipping Kubernetes resources cleanup"
+      fi
+
+    # Now run terraform destroy
     - terraform workspace select staging || terraform workspace new staging
     - |
       if [ -f "${STAGING_TF_VAR_FILE}" ]; then
@@ -377,6 +438,56 @@ cleanup-prod:
   script:
     - |
       echo "WARNING: This will DESTROY all resources in the production environment"
+
+    # Install kubectl and AWS CLI to clean up Kubernetes resources
+    - echo "Installing kubectl and AWS CLI for Kubernetes cleanup"
+    - apk add --no-cache curl aws-cli
+    - curl -LO "https://dl.k8s.io/release/v1.29.4/bin/linux/amd64/kubectl"
+    - chmod +x kubectl && mv kubectl /usr/local/bin/
+    - kubectl version --client
+
+    # Configure kubectl for the production cluster
+    - |
+      echo "Configuring kubectl for production EKS cluster"
+      CLUSTER_NAME="${TF_VAR_PROD_cluster_name}"
+      echo "Using EKS cluster name: $CLUSTER_NAME"
+      aws eks update-kubeconfig --name $CLUSTER_NAME --region ${AWS_DEFAULT_REGION}
+
+    # Clean up all resources in the production namespace
+    - |
+      echo "Cleaning up Kubernetes resources in production namespace"
+      # First check if namespace exists
+      if kubectl get namespace production &>/dev/null; then
+        echo "Deleting all deployments in production namespace"
+        kubectl delete deployments --all -n production --timeout=300s --wait=true || true
+        
+        echo "Deleting all statefulsets in production namespace"
+        kubectl delete statefulsets --all -n production --timeout=300s --wait=true || true
+        
+        echo "Deleting all services in production namespace"
+        kubectl delete services --all -n production --timeout=300s --wait=true || true
+        
+        echo "Deleting all ingresses in production namespace"
+        kubectl delete ingress --all -n production --timeout=300s --wait=true || true
+        
+        echo "Deleting all configmaps in production namespace"
+        kubectl delete configmaps --all -n production --timeout=300s --wait=true || true
+        
+        echo "Deleting all secrets in production namespace"
+        kubectl delete secrets --all -n production --timeout=300s --wait=true || true
+        
+        echo "Deleting all persistent volume claims in production namespace"
+        kubectl delete pvc --all -n production --timeout=300s --wait=true || true
+        
+        echo "Deleting all persistent volumes associated with production namespace"
+        kubectl get pv -o json | jq -r '.items[] | select(.spec.claimRef.namespace == "production") | .metadata.name' | xargs -I{} kubectl delete pv {} --timeout=300s || true
+        
+        echo "Kubernetes resources cleanup completed for production namespace"
+      else
+        echo "Production namespace not found, skipping Kubernetes resources cleanup"
+      fi
+
+    # Now run terraform destroy
     - terraform workspace select production || terraform workspace new production
     - |
       if [ -f "${PRODUCTION_TF_VAR_FILE}" ]; then

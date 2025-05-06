@@ -106,31 +106,26 @@ output "api_gateway_ingress_manifest" {
 output "next_steps" {
   description = "Instructions for next steps after Terraform apply"
   value       = <<-EOT
+    #############################################
+
     ✅ Infrastructure successfully deployed!
-    
-    Next steps:
-    1. Configure kubectl and Helm to connect to your EKS cluster:
-       cd .. && ./scripts/configure-kubectl-helm.sh
-       
-    2. Apply the Kubernetes manifests:
-       kubectl apply -k .  # Apply using kustomization
     
     Run the following command to check the status of your ingress:
     kubectl get ingress
 
     #############################################
 
-    Before destroying the infrastructure, ensure to clean up any resources created in the cluster with:
-    ./scripts/cleanup-k8s-resources.sh
-    It might take a few minutes to remove all resources.
+    Infrastructure can be destroyed using either "cleanup-prod" or 
+    "cleanup-staging" in GitLab CI/CD pipeline.
 
-    To destroy the infrastructure, run the command in terraform directory:
-    terraform destroy -auto-approve
-    This will remove all resources created by this Terraform configuration.
+    ##############################################
 
     After destroying the main infrastructure, be sure to delete the bootstrap infrastructure as well.
+    This needs to be done manually.
     Go to the bootstrap directory and run:
     terraform destroy -auto-approve
     This will remove all resources created by the bootstrap setup.
+
+    ##############################################
   EOT
 }

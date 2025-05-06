@@ -10,6 +10,8 @@ api_gateway:
     RABBITMQ_QUEUE: billing_queue
     RABBITMQ_API_URL: "amqp://rabbit_user:rabbit_password@billing-queue:5672"
     INVENTORY_URL: "http://inventory-app:8080/api/movies"
+    HOST: 0.0.0.0
+    PORT: "3000"
   prod:
     RABBITMQ_HOST: billing-queue
     RABBITMQ_PORT: "5672"
@@ -18,6 +20,8 @@ api_gateway:
     RABBITMQ_QUEUE: billing_queue
     RABBITMQ_API_URL: "amqp://rabbit_user:rabbit_password@billing-queue:5672"
     INVENTORY_URL: "http://inventory-app:8080/api/movies"
+    HOST: 0.0.0.0
+    PORT: "3000"
 
 billing_service:
   staging:
@@ -25,32 +29,40 @@ billing_service:
     DB_PORT: "5432"
     DB_NAME: billing_db
     DB_USER: billing_user
-    DB_PASSWORD: billing_db_password # masked
+    DB_PASSWORD: billing_password # masked
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: postgres # masked
     RABBITMQ_HOST: billing-queue
     RABBITMQ_PORT: "5672"
     RABBITMQ_USER: rabbit_user
     RABBITMQ_PASSWORD: rabbit_password # masked
     RABBITMQ_QUEUE: billing_queue
     RABBITMQ_API_URL: "amqp://rabbit_user:rabbit_password@billing-queue:5672"
+    HOST: 0.0.0.0
+    PORT: "8081"
   prod:
     DB_HOST: billing-db
     DB_PORT: "5432"
     DB_NAME: billing_db
     DB_USER: billing_user
     DB_PASSWORD: billing_db_password # masked
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: postgres # masked
     RABBITMQ_HOST: billing-queue
     RABBITMQ_PORT: "5672"
     RABBITMQ_USER: rabbit_user
     RABBITMQ_PASSWORD: rabbit_password # masked
     RABBITMQ_QUEUE: billing_queue
     RABBITMQ_API_URL: "amqp://rabbit_user:rabbit_password@billing-queue:5672"
+    HOST: 0.0.0.0
+    PORT: "8081"
 
 inventory_service:
   staging:
     DB_HOST: inventory-db
     DB_PORT: "5432"
     DB_NAME: inventory_db
-    DB_USER: inventory_user2
+    DB_USER: inventory_user
     DB_PASSWORD: inventory_password # masked
     POSTGRES_USER: postgres
     POSTGRES_PASSWORD: postgres # masked
@@ -68,38 +80,40 @@ inventory_service:
     PORT: "8080"
 
 global:
-  AWS_DEFAULT_REGION: your_aws_region
-  AWS_ACCESS_KEY_ID: key_goes_here # masked
-  AWS_SECRET_ACCESS_KEY: key_goes_here # masked
-  DOCKER_HUB_USERNAME: username
-  DOCKER_HUB_PASSWORD: password # masked
-  DOCKER_HUB_REPO: repository_name
-  AWS_STATE_BUCKET: your-terraform-state-bucket
+  AWS_DEFAULT_REGION: your-aws-region
+  AWS_ACCESS_KEY_ID: your-aws-access-key # masked
+  AWS_SECRET_ACCESS_KEY: your-aws-secret-access-key # masked
+  AWS_STATE_BUCKET: s3-state-bucket-name
+  AWS_CLUSTER_NAME: your-cluster-name
+  DOCKER_HUB_USERNAME: you-dockerhub-username
+  DOCKER_HUB_PASSWORD: your-dockerhub-password # masked
+  DOCKER_HUB_REPO: your-dockerhub-repository-name
+  CI_SERVER_URL: http://192.168.1.101
 
 terraform:
   common:
-    TF_VAR_cli_admin_username: cli_admin
+    TF_VAR_cli_admin_username: your-aws-cli-admin-username
   staging:
     TF_VAR_vpc_cidr: 10.1.0.0/16
     TF_VAR_public_subnet_cidrs: ["10.1.1.0/24", "10.1.2.0/24"]
     TF_VAR_private_subnet_cidrs: ["10.1.11.0/24", "10.1.12.0/24"]
     TF_VAR_availability_zones: ["eu-north-1a", "eu-north-1b"]
-    TF_VAR_cluster_name: your-cluster-staging
+    TF_VAR_cluster_name: your-cluster-name-staging # add the -staging suffix
     TF_VAR_cluster_version: "1.32"
-    TF_VAR_node_instance_types: ["t3.medium"]
+    TF_VAR_node_instance_types: ["t3.large"]
     TF_VAR_capacity_type: SPOT
     TF_VAR_desired_capacity: 1
-    TF_VAR_min_capacity: 1
-    TF_VAR_max_capacity: 1
+    TF_VAR_min_capacity: 2
+    TF_VAR_max_capacity: 2
   prod:
     TF_VAR_vpc_cidr: 10.0.0.0/16
     TF_VAR_public_subnet_cidrs: ["10.0.1.0/24", "10.0.2.0/24"]
     TF_VAR_private_subnet_cidrs: ["10.0.11.0/24", "10.0.12.0/24"]
     TF_VAR_availability_zones: ["eu-north-1a", "eu-north-1b"]
-    TF_VAR_cluster_name: your-cluster-production
+    TF_VAR_cluster_name: your-cluster-name-production # add the -production suffix
     TF_VAR_cluster_version: "1.32"
-    TF_VAR_node_instance_types: ["t3.medium"]
+    TF_VAR_node_instance_types: ["t3.large"]
     TF_VAR_capacity_type: SPOT
     TF_VAR_desired_capacity: 1
-    TF_VAR_min_capacity: 1
-    TF_VAR_max_capacity: 1
+    TF_VAR_min_capacity: 2
+    TF_VAR_max_capacity: 2

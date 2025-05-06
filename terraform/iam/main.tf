@@ -7,12 +7,12 @@ data "aws_iam_user" "cli_admin" {
   user_name = var.cli_admin_username
 }
 
-# Create an IAM group for admin users
+# Create an IAM group for admin users with environment-specific name
 resource "aws_iam_group" "admin_group" {
-  name = "${var.environment}_${var.cli_admin_username}_admin_group"
+  name = "admin_group_${var.environment}"
 }
 
-# Add the CLI admin user to the admin group
+# Add the CLI admin user to the environment-specific admin group
 resource "aws_iam_user_group_membership" "admin_group_membership" {
   user = data.aws_iam_user.cli_admin.user_name
   groups = [
@@ -22,8 +22,8 @@ resource "aws_iam_user_group_membership" "admin_group_membership" {
 
 # VPC permissions
 resource "aws_iam_policy" "vpc_permissions" {
-  name        = "${var.environment}_VPCModulePermissions"
-  description = "Policy allowing necessary permissions for VPC module operations"
+  name        = "VPCModulePermissions_${var.environment}"
+  description = "Policy allowing necessary permissions for VPC module operations in ${var.environment}"
 
   policy = jsonencode({
     Version = "2012-10-17",
@@ -56,8 +56,8 @@ resource "aws_iam_policy" "vpc_permissions" {
 
 # EKS permissions
 resource "aws_iam_policy" "eks_permissions" {
-  name        = "${var.environment}_EKSModulePermissions"
-  description = "Policy allowing necessary permissions for EKS module operations"
+  name        = "EKSModulePermissions_${var.environment}"
+  description = "Policy allowing necessary permissions for EKS module operations in ${var.environment}"
 
   policy = jsonencode({
     Version = "2012-10-17",
@@ -103,8 +103,8 @@ resource "aws_iam_policy" "eks_permissions" {
 
 # ACM permissions
 resource "aws_iam_policy" "acm_permissions" {
-  name        = "${var.environment}_ACMModulePermissions"
-  description = "Policy allowing necessary permissions for ACM module operations"
+  name        = "ACMModulePermissions_${var.environment}"
+  description = "Policy allowing necessary permissions for ACM module operations in ${var.environment}"
 
   policy = jsonencode({
     Version = "2012-10-17",
@@ -126,8 +126,8 @@ resource "aws_iam_policy" "acm_permissions" {
 
 # Tag permissions
 resource "aws_iam_policy" "tag_permissions" {
-  name        = "${var.environment}_TagResourcePermissions"
-  description = "Policy allowing tag operations needed by various modules"
+  name        = "TagResourcePermissions_${var.environment}"
+  description = "Policy allowing tag operations needed by various modules in ${var.environment}"
 
   policy = jsonencode({
     Version = "2012-10-17",
@@ -145,8 +145,8 @@ resource "aws_iam_policy" "tag_permissions" {
 
 # CloudWatch permissions
 resource "aws_iam_policy" "cloudwatch_permissions" {
-  name        = "${var.environment}_CloudWatchPermissions"
-  description = "Policy allowing necessary permissions for CloudWatch module operations"
+  name        = "CloudWatchPermissions_${var.environment}"
+  description = "Policy allowing necessary permissions for CloudWatch module operations in ${var.environment}"
 
   policy = jsonencode({
     Version = "2012-10-17",
@@ -234,12 +234,13 @@ resource "null_resource" "detach_policies" {
     acm_policy     = aws_iam_policy.acm_permissions.arn
     tag_policy     = aws_iam_policy.tag_permissions.arn
     cw_policy      = aws_iam_policy.cloudwatch_permissions.arn
+    environment    = var.environment
   }
 
   provisioner "local-exec" {
     when    = destroy
     command = <<-EOT
-      echo 'Detaching IAM policies from group before destroying...'
+      echo 'Detaching IAM policies from ${self.triggers.environment} group before destroying...'
       aws iam detach-group-policy --group-name "${self.triggers.group_name}" --policy-arn "${self.triggers.vpc_policy}" || echo "VPC policy already detached"
       aws iam detach-group-policy --group-name "${self.triggers.group_name}" --policy-arn "${self.triggers.eks_policy}" || echo "EKS policy already detached"
       aws iam detach-group-policy --group-name "${self.triggers.group_name}" --policy-arn "${self.triggers.acm_policy}" || echo "ACM policy already detached"
@@ -262,9 +263,13 @@ resource "null_resource" "detach_policies" {
 
 # Final destroy step
 resource "null_resource" "iam_destroyer" {
+  triggers = {
+    environment = var.environment
+  }
+
   provisioner "local-exec" {
     when    = destroy
-    command = "echo 'All IAM resources are now destroyed.'"
+    command = "echo 'All IAM resources for ${self.triggers.environment} are now destroyed.'"
   }
 
   depends_on = [

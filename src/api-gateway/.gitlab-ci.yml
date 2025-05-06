@@ -139,7 +139,7 @@ sast:
   tags:
     - microservices
   script:
-    - echo "Setting up SAST scan environment..."
+    - echo "Setting up SAST scan environmen"
     - rm -rf /tmp/sast-scan
     - mkdir -p /tmp/sast-scan
 
@@ -296,7 +296,7 @@ deploy-staging:
     - microservices
   extends: .k8s-setup
   script:
-    # Use our local script to configure kubectl instead of relying on external scripts
+    # Use our local script to configure kubectl
     - |
       echo "Using local script to configure kubectl"
       if [ -f "scripts/configure-kubectl.sh" ]; then
@@ -312,7 +312,13 @@ deploy-staging:
         exit 1
       fi
 
-    # Create Kubernetes secrets from GitLab CI variables - mapping from prefixed to app variables
+    # Ensure namespace exists (defensive check)
+    - |
+      echo "Ensuring ${STAGING_KUBE_NAMESPACE} namespace exists"
+      kubectl get namespace ${STAGING_KUBE_NAMESPACE} || kubectl create namespace ${STAGING_KUBE_NAMESPACE}
+      echo "${STAGING_KUBE_NAMESPACE} namespace is ready"
+
+    # Create Kubernetes secrets from GitLab CI variables
     - |
       kubectl create secret generic api-gateway-secrets \
         --from-literal=RABBITMQ_HOST=${STAGING_API_RABBITMQ_HOST} \
@@ -328,7 +334,7 @@ deploy-staging:
     - kubectl get secret api-gateway-secrets -o yaml -n ${STAGING_KUBE_NAMESPACE}
     - echo "Deploying to staging environment on EKS"
 
-    # Apply Kubernetes manifests individually instead of using kustomize
+    # Apply Kubernetes manifests individually
     - echo "Applying Kubernetes manifests individually."
     # Replace Docker Hub image variables in manifests
     - sed -i "s|\${DOCKER_HUB_REPO}|${DOCKER_HUB_REPO}|g" manifests/api-gateway-app.yaml
@@ -337,7 +343,7 @@ deploy-staging:
     - sed -i "s|\${CI_COMMIT_SHORT_SHA}|${CI_COMMIT_SHORT_SHA}|g" manifests/billing-queue.yaml
 
     # Apply the PVCs and PVs first
-    - echo "Creating PVC and PV for billing queue..."
+    - echo "Creating PVC and PV for billing queue"
     # First delete the old PV if it exists
     - kubectl delete pv billing-queue-vol --ignore-not-found=true
     # Apply just the PVC first to ensure it exists
@@ -401,7 +407,13 @@ deploy-prod:
         exit 1
       fi
 
-    # Create Kubernetes secrets from GitLab CI variables - mapping from prefixed to app variables
+    # Ensure namespace exists (defensive check)
+    - |
+      echo "Ensuring ${PROD_KUBE_NAMESPACE} namespace exists..."
+      kubectl get namespace ${PROD_KUBE_NAMESPACE} || kubectl create namespace ${PROD_KUBE_NAMESPACE}
+      echo "${PROD_KUBE_NAMESPACE} namespace is ready"
+
+    # Create Kubernetes secrets from GitLab CI variables
     - |
       kubectl create secret generic api-gateway-secrets \
         --from-literal=RABBITMQ_HOST=${PROD_API_RABBITMQ_HOST} \
@@ -417,8 +429,8 @@ deploy-prod:
     - kubectl get secret api-gateway-secrets -o yaml -n ${PROD_KUBE_NAMESPACE}
     - echo "Deploying to production environment on EKS"
 
-    # Apply Kubernetes manifests individually instead of using kustomize
-    - echo "Applying Kubernetes manifests individually..."
+    # Apply Kubernetes manifests individuall
+    - echo "Applying Kubernetes manifests individually"
     # Replace Docker Hub image variables in manifests
     - sed -i "s|\${DOCKER_HUB_REPO}|${DOCKER_HUB_REPO}|g" manifests/api-gateway-app.yaml
     - sed -i "s|\${CI_COMMIT_SHORT_SHA}|${CI_COMMIT_SHORT_SHA}|g" manifests/api-gateway-app.yaml
@@ -426,7 +438,7 @@ deploy-prod:
     - sed -i "s|\${CI_COMMIT_SHORT_SHA}|${CI_COMMIT_SHORT_SHA}|g" manifests/billing-queue.yaml
 
     # Apply the PVCs and PVs first
-    - echo "Creating PVC and PV for billing queue..."
+    - echo "Creating PVC and PV for billing queue"
     # First delete the old PV if it exists
     - kubectl delete pv billing-queue-vol --ignore-not-found=true
     # Apply just the PVC first to ensure it exists
@@ -441,9 +453,12 @@ deploy-prod:
     - kubectl delete statefulset billing-queue -n ${PROD_KUBE_NAMESPACE} --cascade=orphan || true
 
     # Apply the new StatefulSet definition
-    - echo "Applying new StatefulSet and Service..."
+    - echo "Applying new StatefulSet and Service"
     - kubectl apply -f manifests/billing-queue.yaml -n ${PROD_KUBE_NAMESPACE}
     - kubectl apply -f manifests/api-gateway-app.yaml -n ${PROD_KUBE_NAMESPACE}
+
+    # Increase the timeout for the rollout
+    - echo "Waiting for deployment to complete (5 minute timeout)..."
     - kubectl rollout status deployment/api-gateway-app -n ${PROD_KUBE_NAMESPACE} --timeout=300s
 
   environment:

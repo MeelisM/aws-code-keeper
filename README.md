@@ -135,7 +135,7 @@ Before beginning the deployment, ensure your AWS user has the following IAM perm
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "TerraformIAMBootstrap",
+      "Sid": "SetupIAM",
       "Effect": "Allow",
       "Action": [
         "iam:GetUser",
@@ -149,7 +149,19 @@ Before beginning the deployment, ensure your AWS user has the following IAM perm
         "iam:DeletePolicy",
         "iam:DeletePolicyVersion",
         "iam:CreatePolicyVersion",
-        "iam:UpdateAssumeRolePolicy"
+        "iam:UpdateAssumeRolePolicy",
+        "iam:ListAttachedGroupPolicies",
+        "iam:CreateGroup",
+        "iam:GetGroup",
+        "iam:DeleteGroup",
+        "iam:AddUserToGroup",
+        "iam:AttachGroupPolicy",
+        "iam:ListGroupsForUser",
+        "iam:DetachGroupPolicy",
+        "iam:RemoveUserFromGroup",
+        "iam:UpdateGroup",
+        "iam:ListEntitiesForPolicy",
+        "iam:ListPolicies"
       ],
       "Resource": "*"
     }

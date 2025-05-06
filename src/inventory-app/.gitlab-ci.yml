@@ -82,12 +82,11 @@ build:
         fi
       }
 
-    # Check for critical modules (only production dependencies)
+    # Check for critical modules
     - check_module "express" || exit 1
     - check_module "sequelize" || exit 1
     - check_module "pg" || exit 1
 
-    # Build verification successful
     - echo "Build verification completed successfully at $(date)"
   artifacts:
     paths:
@@ -298,7 +297,7 @@ deploy-staging:
     - microservices
   extends: .k8s-setup
   script:
-    # Use our local script to configure kubectl instead of relying on external scripts
+    # Use our local script to configure kubectl
     - |
       echo "Using local script to configure kubectl"
       if [ -f "scripts/configure-kubectl.sh" ]; then
@@ -313,6 +312,12 @@ deploy-staging:
         echo "ERROR: Could not find local configure-kubectl.sh script"
         exit 1
       fi
+
+    # Ensure namespace exists (defensive check)
+    - |
+      echo "Ensuring ${STAGING_KUBE_NAMESPACE} namespace exists"
+      kubectl get namespace ${STAGING_KUBE_NAMESPACE} || kubectl create namespace ${STAGING_KUBE_NAMESPACE}
+      echo "${STAGING_KUBE_NAMESPACE} namespace is ready"
 
     # Create Kubernetes secrets from GitLab CI variables
     - |
@@ -329,8 +334,8 @@ deploy-staging:
         -n ${STAGING_KUBE_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
     - kubectl get secret inventory-secrets -o yaml -n ${STAGING_KUBE_NAMESPACE}
     - echo "Deploying to staging environment on EKS"
-    # Apply Kubernetes manifests individually instead of using kustomize
-    - echo "Applying Kubernetes manifests individually..."
+    # Apply Kubernetes manifests individually
+    - echo "Applying Kubernetes manifests individually"
     # Replace Docker Hub image variables in manifests
     - sed -i "s|\${DOCKER_HUB_REPO}|${DOCKER_HUB_REPO}|g" manifests/inventory-app.yaml
     - sed -i "s|\${CI_COMMIT_SHORT_SHA}|${CI_COMMIT_SHORT_SHA}|g" manifests/inventory-app.yaml
@@ -355,7 +360,7 @@ deploy-staging:
     - kubectl apply -f manifests/inventory-app.yaml -n ${STAGING_KUBE_NAMESPACE}
 
     # Increase the timeout for the rollout
-    - echo "Waiting for deployment to complete (10 minute timeout)..."
+    - echo "Waiting for deployment to complete (10 minute timeout)"
     - kubectl rollout status deployment/inventory-app -n ${STAGING_KUBE_NAMESPACE} --timeout=600s
 
   environment:
@@ -399,6 +404,12 @@ deploy-prod:
         exit 1
       fi
 
+    # Ensure namespace exists (defensive check)
+    - |
+      echo "Ensuring ${PROD_KUBE_NAMESPACE} namespace exists"
+      kubectl get namespace ${PROD_KUBE_NAMESPACE} || kubectl create namespace ${PROD_KUBE_NAMESPACE}
+      echo "${PROD_KUBE_NAMESPACE} namespace is ready"
+
     # Create Kubernetes secrets from GitLab CI variables
     - |
       kubectl create secret generic inventory-secrets \
@@ -412,7 +423,10 @@ deploy-prod:
         --from-literal=HOST=${PROD_INVENTORY_HOST} \
         --from-literal=PORT=${PROD_INVENTORY_PORT} \
         -n ${PROD_KUBE_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+    - kubectl get secret inventory-secrets -o yaml -n ${PROD_KUBE_NAMESPACE}
     - echo "Deploying to production environment on EKS"
+    # Apply Kubernetes manifests individually
+    - echo "Applying Kubernetes manifests individually"
     # Replace image placeholders in manifests
     - sed -i "s|\${DOCKER_HUB_REPO}|${DOCKER_HUB_REPO}|g" manifests/inventory-app.yaml
     - sed -i "s|\${CI_COMMIT_SHORT_SHA}|${CI_COMMIT_SHORT_SHA}|g" manifests/inventory-app.yaml
@@ -421,11 +435,26 @@ deploy-prod:
     - sed -i "s|\${DOCKER_HUB_REPO}|${DOCKER_HUB_REPO}|g" manifests/inventory-db.yaml
     - sed -i "s|\${CI_COMMIT_SHORT_SHA}|${CI_COMMIT_SHORT_SHA}|g" manifests/inventory-db.yaml
 
-    # Apply Kubernetes manifests
-    - kubectl apply -f manifests/inventory-app.yaml -n ${PROD_KUBE_NAMESPACE}
+    # Apply the database manifests first
+    - echo "Deploying inventory database..."
     - kubectl apply -f manifests/inventory-db.yaml -n ${PROD_KUBE_NAMESPACE}
-    - kubectl apply -k manifests/ -n ${PROD_KUBE_NAMESPACE}
-    - kubectl rollout status deployment/inventory-app -n ${PROD_KUBE_NAMESPACE} --timeout=300s
+
+    # Wait for the database to be ready
+    - echo "Waiting for inventory database to be ready"
+    - kubectl rollout status statefulset/inventory-db -n ${PROD_KUBE_NAMESPACE} --timeout=300s
+
+    # Delete the old StatefulSet without deleting the pods
+    - echo "Deleting old StatefulSet without deleting pods..."
+    - kubectl delete statefulset inventory-app -n ${PROD_KUBE_NAMESPACE} --cascade=orphan || true
+
+    # Apply the new StatefulSet definition
+    - echo "Applying new StatefulSet and Service..."
+    - kubectl apply -f manifests/inventory-db.yaml -n ${PROD_KUBE_NAMESPACE}
+    - kubectl apply -f manifests/inventory-app.yaml -n ${PROD_KUBE_NAMESPACE}
+
+    # Increase the timeout for the rollout
+    - echo "Waiting for deployment to complete (10 minute timeout)..."
+    - kubectl rollout status deployment/inventory-app -n ${PROD_KUBE_NAMESPACE} --timeout=600s
 
   environment:
     name: production

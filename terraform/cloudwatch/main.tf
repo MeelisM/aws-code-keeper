@@ -45,8 +45,8 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring_dashboard" {
         height = 6
         properties = {
           metrics = [
-            ["ContainerInsights", "pod_cpu_utilization", "ClusterName", var.cluster_name, "Namespace", "default", { "region" : var.aws_region }],
-            ["ContainerInsights", "pod_cpu_utilization", "ClusterName", var.cluster_name, "Namespace", "kube-system", { "region" : var.aws_region }]
+            ["ContainerInsights", "pod_cpu_utilization", "ClusterName", var.cluster_name, "Namespace", "kube-system", { "region" : var.aws_region }],
+            ["ContainerInsights", "pod_cpu_utilization", "ClusterName", var.cluster_name, "Namespace", var.environment, { "region" : var.aws_region }]
           ]
           period = 300
           stat   = "Average"
@@ -63,8 +63,8 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring_dashboard" {
         height = 6
         properties = {
           metrics = [
-            ["ContainerInsights", "pod_memory_utilization", "ClusterName", var.cluster_name, "Namespace", "default", { "region" : var.aws_region }],
-            ["ContainerInsights", "pod_memory_utilization", "ClusterName", var.cluster_name, "Namespace", "kube-system", { "region" : var.aws_region }]
+            ["ContainerInsights", "pod_memory_utilization", "ClusterName", var.cluster_name, "Namespace", "kube-system", { "region" : var.aws_region }],
+            ["ContainerInsights", "pod_memory_utilization", "ClusterName", var.cluster_name, "Namespace", var.environment, { "region" : var.aws_region }]
           ]
           period = 300
           stat   = "Average"
@@ -84,7 +84,7 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring_dashboard" {
             ["ContainerInsights", "pod_cpu_utilization",
               "PodName", "api-gateway-app",
               "ClusterName", var.cluster_name,
-              "Namespace", "default",
+              "Namespace", var.environment,
             { "region" : var.aws_region }],
             ["...", "inventory-app",
               ".", ".",
@@ -113,7 +113,7 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring_dashboard" {
             ["ContainerInsights", "pod_memory_utilization",
               "PodName", "api-gateway-app",
               "ClusterName", var.cluster_name,
-              "Namespace", "default",
+              "Namespace", var.environment,
             { "region" : var.aws_region }],
             ["...", "inventory-app",
               ".", ".",
@@ -142,7 +142,7 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring_dashboard" {
             ["ContainerInsights", "pod_cpu_utilization",
               "PodName", "inventory-db-0",
               "ClusterName", var.cluster_name,
-              "Namespace", "default",
+              "Namespace", var.environment,
             { "region" : var.aws_region }],
             ["...", "billing-db-0",
               ".", ".",
@@ -171,7 +171,7 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring_dashboard" {
             ["ContainerInsights", "pod_memory_utilization",
               "PodName", "inventory-db-0",
               "ClusterName", var.cluster_name,
-              "Namespace", "default",
+              "Namespace", var.environment,
             { "region" : var.aws_region }],
             ["...", "billing-db-0",
               ".", ".",
@@ -235,7 +235,7 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring_dashboard" {
               "PodName", "api-gateway-app",
               "ContainerName", "api-gateway",
               "ClusterName", var.cluster_name,
-              "Namespace", "default",
+              "Namespace", var.environment,
             { "region" : var.aws_region }],
             ["...", "inventory-app",
               ".", "inventory-app",
@@ -267,7 +267,7 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring_dashboard" {
               "PodName", "api-gateway-app",
               "ContainerName", "api-gateway",
               "ClusterName", var.cluster_name,
-              "Namespace", "default",
+              "Namespace", var.environment,
             { "region" : var.aws_region }],
             ["...", "inventory-app",
               ".", "inventory-app",
@@ -298,7 +298,7 @@ resource "aws_cloudwatch_dashboard" "eks_monitoring_dashboard" {
             ["ContainerInsights", "pod_cpu_utilization_over_pod_limit",
               "PodName", "api-gateway-app",
               "ClusterName", var.cluster_name,
-              "Namespace", "default",
+              "Namespace", var.environment,
             { "region" : var.aws_region }],
             ["...", "inventory-app",
               ".", ".",
