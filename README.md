@@ -131,45 +131,14 @@ Successful API test results from Postman showing the Movie CRUD operations worki
 ```
 code-keeper/
 ├── ansible/                     # Ansible playbooks for GitLab setup
-│   ├── gitlab_setup.yml        # Main GitLab setup playbook
-│   ├── group_vars/             # Variables for Ansible playbooks
-│   ├── inventory/              # Ansible inventory files
-│   └── roles/                  # Ansible roles for GitLab configuration
-├── gitlab/                     # GitLab Docker configuration
-│   └── docker-compose.yml      # Docker Compose for GitLab services
-├── docker-compose.yaml         # Docker configuration reference
-├── kustomization.yaml          # Kubernetes resource management
-├── images/                     # Architecture diagrams and screenshots
-├── manifests/                  # Kubernetes manifests
-│   ├── api-gateway-app.yaml
-│   ├── billing-app.yaml
-│   ├── billing-db.yaml
-│   ├── billing-queue.yaml
-│   ├── inventory-app.yaml
-│   ├── inventory-db.yaml
-│   └── networking/
-│       └── api-gateway-ingress.tpl.yaml
-├── postman/                    # API test collections
-├── scripts/                    # Utility scripts
-│   ├── build-and-push.sh
-│   ├── cleanup-k8s-resources.sh
-│   ├── configure-kubectl-helm.sh
-│   ├── init-billing-db.sh
-│   └── init-inventory-db.sh
-├── src/                        # Application source code
-│   ├── api-gateway/            # API Gateway service
-│   ├── billing-app/            # Billing service
-│   └── inventory-app/          # Inventory service
-└── terraform/                  # Infrastructure as code
-    ├── acm/                    # Certificate management
-    ├── bootstrap/              # Terraform state setup
-    ├── cloudwatch/             # Monitoring
-    ├── eks/                    # Kubernetes cluster
-    ├── iam/                    # Identity & access
-    ├── kubernetes-addons/      # K8s addons (ALB, metrics)
-    ├── scripts/                # CI/CD scripts for Terraform
-    │   └── ci-configure-kubectl.sh
-    └── vpc/                    # Network configuration
+├── gitlab/                      # GitLab Docker configuration
+├── images/                      # Architecture diagrams and screenshots
+├── postman/                     # API test collections
+├── src/                         # Application source code
+│   ├── api-gateway/             # API Gateway service
+│   ├── billing-app/             # Billing service
+│   └── inventory-app/           # Inventory service
+└── terraform/                   # Infrastructure as code
 ```
 
 ## Getting Started
