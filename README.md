@@ -31,8 +31,7 @@ A cloud-native microservices architecture deployed on AWS EKS (Elastic Kubernete
 - [Monitoring & Observability](#monitoring--observability)
 - [Maintenance & Operations](#maintenance--operations)
   - [Resource Cleanup](#resource-cleanup)
-  - [Common Tasks](#common-tasks)
-- [Troubleshooting](#troubleshooting)
+- [Project Structure](#project-structure)
 - [Future Enhancements](#future-enhancements)
 - [License](#license)
 
@@ -41,6 +40,7 @@ A cloud-native microservices architecture deployed on AWS EKS (Elastic Kubernete
 For those who want to get started immediately:
 
 1. **Prerequisites**: Ensure you have Docker, AWS CLI, Terraform v1.11.4+, Ansible, kubectl, Python3.13, and Git installed.
+   Ensure your AWS user has the following permissions: [AWS Permissions](#aws-permissions)
 
 2. **Start GitLab**:
 
@@ -52,7 +52,16 @@ For those who want to get started immediately:
    cat config/initial_root_password  # Get root password
    ```
 
-3. **Configure & Run Ansible**:
+3. **Setup Terraform state management in S3 and DynamoDB**:
+
+   ```bash
+   cp terraform.tfvars.example terraform.tfvars
+   # Edit .terraform.tfvars
+   cd terraform/bootstrap
+   terraform init && terraform apply
+   ```
+
+4. **Configure & Run Ansible**:
 
    ```bash
    cd ansible
@@ -64,14 +73,6 @@ For those who want to get started immediately:
    source ~/.ansible-venv/bin/activate
    pip install ansible python-gitlab
    ansible-playbook -i inventory/localhost gitlab_setup.yml --ask-vault-pass
-   ```
-
-4. **Setup Terraform**:
-
-   ```bash
-   cp terraform.tfvars.example terraform.tfvars
-   cd terraform/bootstrap
-   terraform init && terraform apply
    ```
 
 5. **Run Pipelines**: Allow infrastructure pipeline to complete before running service pipelines.
@@ -89,9 +90,9 @@ This project implements a cloud-native movie catalog service with three microser
 
 2. **Inventory Service**
 
-   - Manages movie catalog with CRUD operations via RESTful API
+   - Manages movie catalog with CRUD operations
    - PostgreSQL database for persistent storage
-   - RESTful API endpoints
+   - RESTful API endpoints for interacting with the catalog
 
 3. **Billing Service**
    - Processes orders through a message queue system
@@ -122,8 +123,6 @@ This project implements a cloud-native movie catalog service with three microser
   - **Private/Public Subnet Separation**: Enhanced security with proper gateway configuration
   - **Autoscaling**: Horizontal Pod Autoscaling (HPA) based on CPU utilization
 
-![Infrastructure Pipeline](./images/infra_pipeline.png)
-
 ### Deployment Strategy
 
 - **Stateless Services** (API Gateway, Inventory App)
@@ -152,13 +151,13 @@ This project implements a cloud-native movie catalog service with three microser
 
 ### Prerequisites
 
-- ✓ Docker and Docker Compose
-- ✓ AWS CLI
-- ✓ Terraform v1.11.4+
-- ✓ Ansible
-- ✓ kubectl
-- ✓ Python3.13
-- ✓ Git
+- Docker and Docker Compose
+- AWS CLI
+- Terraform v1.11.4+
+- Ansible
+- kubectl
+- Python3.13
+- Git
 
 ### AWS Permissions
 
@@ -315,6 +314,7 @@ The project uses two distinct pipeline types:
 2. **Infrastructure Pipeline**: For managing the AWS infrastructure via Terraform
 
 ![Service Pipeline](./images/service_pipeline.png)
+![Infrastructure Pipeline](./images/infra_pipeline.png)
 
 ### Pipeline Monitoring
 
@@ -339,7 +339,7 @@ Each service pipeline includes the following stages:
 1. **Build**: Compiles code, installs dependencies via npm, verifies installation
 2. **Test**: Executes the test suite for the service
 3. **Scan**: Performs code quality and security analysis
-4. **Containerize**: Builds Docker images, tags them, and pushes to repository
+4. **Containerize**: Builds Docker images, tags them, and pushes to Docker Hub
 5. **Deploy to Staging**: Configures kubectl, creates Kubernetes secrets, deploys to staging
 6. **Approval**: Manual approval gate before proceeding to production
 7. **Deploy to Production**: Deploys to production EKS cluster using prod-specific variables
@@ -430,53 +430,6 @@ To clean up all resources when you're done:
    cd gitlab
    docker-compose down
    ```
-
-### Common Tasks
-
-#### Updating Service Configuration
-
-1. Make changes to the service code in the corresponding repository
-2. Commit and push changes
-3. The CI/CD pipeline will automatically build, test, and deploy the changes
-
-#### Scaling Resources
-
-To scale the number of nodes or pods:
-
-1. Edit the appropriate terraform variables in `terraform-staging.tfvars` or `terraform-production.tfvars`
-2. Commit and push changes to the infrastructure repository
-3. The CI/CD pipeline will apply the changes
-
-## Troubleshooting
-
-### Common Issues and Solutions
-
-#### Pipeline Failures
-
-**Issue**: CI/CD pipeline fails during deployment  
-**Solution**:
-
-- Check the job logs for specific error messages
-- Verify AWS credentials are correctly configured in GitLab CI variables
-- Ensure required permissions are granted to the AWS user
-
-#### Service Connectivity Issues
-
-**Issue**: Services cannot communicate with each other  
-**Solution**:
-
-- Verify Kubernetes service names are correctly referenced in environment variables
-- Check that services are deployed in the correct namespace
-- Examine network policies to ensure traffic is allowed between services
-
-#### Database Connection Errors
-
-**Issue**: Services cannot connect to databases  
-**Solution**:
-
-- Verify database credentials are correctly set in the Kubernetes secrets
-- Check that StatefulSets are running and persistent volumes are correctly attached
-- Ensure database initialization scripts have run successfully
 
 ## Project Structure
 

@@ -24,7 +24,7 @@ variables:
     - terraform --version
     # Create backend_config.hcl from the example
     - |
-      echo "Creating backend_config.hcl from example file"
+      echo "Creating backend_config.hcl from example file..."
       if [ -f "backend_config.hcl.example" ]; then
         # Copy the example file as a starting point
         cp backend_config.hcl.example backend_config.hcl
@@ -140,8 +140,8 @@ plan-staging:
   stage: plan
   extends: .terraform-setup
   script:
-    - echo "Planning changes for staging environment"
-    - echo "Checking AWS credential info..."
+    - echo "Planning changes for staging environment..."
+    - echo "Checking AWS credential info"
     - aws sts get-caller-identity || echo "Failed to get AWS identity"
     - terraform workspace select staging || terraform workspace new staging
     - |
@@ -384,7 +384,7 @@ cleanup-prod:
     TF_VAR_FILE: ${PRODUCTION_TF_VAR_FILE}
   script:
     - |
-      echo "WARNING: This will DESTROY all resources in the ${ENVIRONMENT} environment"
+      echo "WARNING: This will DESTROY all resources in the ${ENVIRONMENT} environment."
     # Install kubectl and AWS CLI
     - apk add --no-cache curl aws-cli
     - curl -LO "https://dl.k8s.io/release/v1.29.4/bin/linux/amd64/kubectl"

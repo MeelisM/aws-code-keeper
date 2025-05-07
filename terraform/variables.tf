@@ -7,7 +7,7 @@ variable "aws_region" {
 variable "environment" {
   description = "Environment name (e.g., dev, prod)"
   type        = string
-  default     = "dev"
+  default     = "staging"
 }
 
 variable "vpc_cidr" {
@@ -37,7 +37,7 @@ variable "availability_zones" {
 variable "cluster_name" {
   description = "Name of the EKS cluster"
   type        = string
-  default     = "cloud-design-cluster"
+  default     = "code-keeper-cluster"
 }
 
 variable "cluster_version" {

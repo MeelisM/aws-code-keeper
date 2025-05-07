@@ -67,7 +67,10 @@ resource "aws_iam_policy" "eks_permissions" {
         Action = [
           "eks:DescribeNodegroup", "eks:CreateCluster", "eks:DescribeCluster",
           "eks:TagResource", "eks:DeleteCluster", "eks:ListClusters",
-          "eks:CreateNodegroup", "eks:DeleteNodegroup"
+          "eks:CreateNodegroup", "eks:DeleteNodegroup", "eks:ListNodegroups",
+          "eks:UpdateClusterConfig", "eks:UpdateNodegroupConfig",
+          "eks:ListFargateProfiles", "eks:DeleteFargateProfile",
+          "eks:DescribeFargateProfile", "eks:CreateFargateProfile"
         ],
         Resource = "*"
       },
@@ -80,7 +83,8 @@ resource "aws_iam_policy" "eks_permissions" {
           "iam:CreateServiceLinkedRole", "iam:CreateOpenIDConnectProvider",
           "iam:GetOpenIDConnectProvider", "iam:DeleteOpenIDConnectProvider",
           "iam:TagOpenIDConnectProvider", "iam:ListOpenIDConnectProviders",
-          "iam:ListInstanceProfilesForRole"
+          "iam:ListInstanceProfilesForRole", "iam:CreatePolicy",
+          "iam:DeletePolicy", "iam:GetPolicy", "iam:ListPolicies"
         ],
         Resource = "*"
       },
@@ -89,7 +93,16 @@ resource "aws_iam_policy" "eks_permissions" {
         Action = [
           "autoscaling:CreateAutoScalingGroup", "autoscaling:DeleteAutoScalingGroup",
           "autoscaling:DescribeAutoScalingGroups", "autoscaling:DescribeScalingActivities",
-          "autoscaling:UpdateAutoScalingGroup"
+          "autoscaling:UpdateAutoScalingGroup", "autoscaling:TerminateInstanceInAutoScalingGroup"
+        ],
+        Resource = "*"
+      },
+      {
+        Effect = "Allow",
+        Action = [
+          "ec2:DescribeNetworkInterfaces", "ec2:DeleteNetworkInterface",
+          "ec2:DescribeLaunchTemplateVersions", "ec2:CreateLaunchTemplate",
+          "ec2:DeleteLaunchTemplate"
         ],
         Resource = "*"
       }
@@ -224,56 +237,22 @@ resource "null_resource" "wait_for_iam_propagation" {
   }
 }
 
-# Detach policies before destroy
-resource "null_resource" "detach_policies" {
+# Control the IAM resource lifecycle - this ensures our IAM resources are destroyed last
+resource "null_resource" "iam_lifecycle_controller" {
   triggers = {
-    destroy_marker = "detach_on_destroy"
-    group_name     = aws_iam_group.admin_group.name
-    vpc_policy     = aws_iam_policy.vpc_permissions.arn
-    eks_policy     = aws_iam_policy.eks_permissions.arn
-    acm_policy     = aws_iam_policy.acm_permissions.arn
-    tag_policy     = aws_iam_policy.tag_permissions.arn
-    cw_policy      = aws_iam_policy.cloudwatch_permissions.arn
-    environment    = var.environment
-  }
-
-  provisioner "local-exec" {
-    when    = destroy
-    command = <<-EOT
-      echo 'Detaching IAM policies from ${self.triggers.environment} group before destroying...'
-      aws iam detach-group-policy --group-name "${self.triggers.group_name}" --policy-arn "${self.triggers.vpc_policy}" || echo "VPC policy already detached"
-      aws iam detach-group-policy --group-name "${self.triggers.group_name}" --policy-arn "${self.triggers.eks_policy}" || echo "EKS policy already detached"
-      aws iam detach-group-policy --group-name "${self.triggers.group_name}" --policy-arn "${self.triggers.acm_policy}" || echo "ACM policy already detached"
-      aws iam detach-group-policy --group-name "${self.triggers.group_name}" --policy-arn "${self.triggers.tag_policy}" || echo "Tag policy already detached"
-      aws iam detach-group-policy --group-name "${self.triggers.group_name}" --policy-arn "${self.triggers.cw_policy}" || echo "CloudWatch policy already detached"
-
-      echo 'Waiting 10 seconds for detachment to propagate...'
-      sleep 10
-    EOT
-  }
-
-  depends_on = [
-    aws_iam_group_policy_attachment.admin_group_vpc,
-    aws_iam_group_policy_attachment.admin_group_eks,
-    aws_iam_group_policy_attachment.admin_group_acm,
-    aws_iam_group_policy_attachment.admin_group_tag,
-    aws_iam_group_policy_attachment.admin_group_cloudwatch
-  ]
-}
-
-# Final destroy step
-resource "null_resource" "iam_destroyer" {
-  triggers = {
+    group_name  = aws_iam_group.admin_group.name
+    vpc_policy  = aws_iam_policy.vpc_permissions.arn
+    eks_policy  = aws_iam_policy.eks_permissions.arn
+    acm_policy  = aws_iam_policy.acm_permissions.arn
+    tag_policy  = aws_iam_policy.tag_permissions.arn
+    cw_policy   = aws_iam_policy.cloudwatch_permissions.arn
     environment = var.environment
   }
 
-  provisioner "local-exec" {
-    when    = destroy
-    command = "echo 'All IAM resources for ${self.triggers.environment} are now destroyed.'"
-  }
+  # This resource doesn't do anything during create/update 
+  # but during destroy, it ensures other resources are gone before IAM resources
 
   depends_on = [
-    null_resource.detach_policies,
     null_resource.wait_for_iam_propagation
   ]
 }

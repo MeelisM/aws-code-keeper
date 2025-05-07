@@ -43,5 +43,5 @@ variable "availability_zones" {
 variable "cluster_name" {
   description = "Name of the EKS cluster for tagging"
   type        = string
-  default     = "cloud-design-cluster"
+  default     = "code-keeper-cluster"
 }

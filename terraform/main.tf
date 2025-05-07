@@ -91,3 +91,36 @@ resource "local_file" "api_gateway_ingress" {
 
   depends_on = [module.acm]
 }
+
+# This meta-resource establishes dependencies between all infrastructure resources and 
+# the IAM module to ensure IAM resources are destroyed last
+resource "null_resource" "iam_destroy_dependency" {
+  triggers = {
+    always_run = timestamp()
+  }
+
+  # This depends on the IAM lifecycle controller, forcing Terraform to process this
+  # dependency after all infrastructure resources but before destroying IAM resources
+  depends_on = [module.iam.iam_lifecycle_id]
+}
+
+# Create explicit dependency from all resources to the IAM destroy dependency
+resource "null_resource" "infra_dependency_chain" {
+  depends_on = [
+    module.eks,
+    module.vpc,
+    module.acm,
+    module.kubernetes_addons,
+    module.cloudwatch_dashboard,
+    local_file.api_gateway_ingress
+  ]
+
+  # This empty resource will be destroyed before the IAM resources
+  # but after all other infrastructure resources
+
+  lifecycle {
+    replace_triggered_by = [
+      null_resource.iam_destroy_dependency
+    ]
+  }
+}
