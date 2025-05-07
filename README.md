@@ -83,11 +83,11 @@ The following image shows the running Kubernetes services and pods in staging an
 
 Successful API test results from Postman showing the Movie CRUD operations working against the AWS ingress endpoint:
 
-##### API test results - Staging
+#### API test results - Staging
 
 ![API Test Results - Staging](./images/staging_postman_results.png)
 
-##### API test results - Production
+#### API test results - Production
 
 ![API Test Results - Production](./images/prod_postman_results.png)
 
@@ -328,8 +328,8 @@ Go to **Projects > Your Project > Build > Pipelines** or directly access:
 
 - Click on a specific pipeline icon to view its jobs and stages. Each job displays real-time logs and status updates.
 - Manual Approval Steps:
-  Identify jobs marked as manual and click to approve or deny.
-  Example: The `approval-prod` and `apply-prod` jobs require manual approval and initation after the staging deployment completes.
+  - Identify jobs marked as manual and click to approve or deny.
+  - Example: The `approval-prod` and `apply-prod` jobs require manual approval and initation after the staging deployment completes.
 
 ![Access Pipelines](/images/pipeline_location.png)
 
@@ -379,11 +379,11 @@ Import the collections and environment from the `postman/` directory to test the
 
 The project includes a comprehensive CloudWatch dashboard that provides visibility into cluster performance:
 
-##### Staging Dashboard
+### Staging Dashboard
 
 ![Cloudwatch Dashboard - Staging](./images/staging_dashboard.png)
 
-##### Production Dashboard
+### Production Dashboard
 
 ![Cloudwatch Dashboard - Production](./images/production_dashboard.png)
 
