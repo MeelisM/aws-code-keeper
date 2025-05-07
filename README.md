@@ -9,21 +9,72 @@ A cloud-native microservices architecture deployed on AWS EKS (Elastic Kubernete
 
 ## Table of Contents
 
+- [Quick Start Guide](#quick-start-guide)
 - [Project Overview](#project-overview)
-- [CI/CD Pipeline](#cicd-pipeline)
-- [Deployment Status](#deployment-status)
-- [Architecture Components](#architecture-components)
-- [Technologies](#technologies)
-- [Project Structure](#project-structure)
-- [Getting Started](#getting-started)
-- [CI/CD Pipeline Details](#cicd-pipeline-details)
-- [API Documentation](#api-documentation)
-- [Testing with Postman](#testing-with-postman)
+- [Architecture](#architecture)
+  - [Infrastructure Components](#infrastructure-components)
+  - [Deployment Strategy](#deployment-strategy)
+  - [Key Features](#key-features)
+- [Setup & Installation](#setup--installation)
+  - [Prerequisites](#prerequisites)
+  - [AWS Permissions](#aws-permissions)
+  - [Installation Steps](#installation-steps)
+- [CI/CD Pipelines](#cicd-pipelines)
+  - [Pipeline Structure](#pipeline-structure)
+  - [Service Pipelines](#service-pipelines)
+  - [Infrastructure Pipeline](#infrastructure-pipeline)
+  - [Pipeline Monitoring](#pipeline-monitoring)
+- [Usage & Testing](#usage--testing)
+  - [API Documentation](#api-documentation)
+  - [Postman Tests](#postman-tests)
+  - [Deployment Status](#deployment-status)
 - [Monitoring & Observability](#monitoring--observability)
-- [Cleanup](#cleanup)
-- [Architecture Features](#architecture-features)
+- [Maintenance & Operations](#maintenance--operations)
+  - [Resource Cleanup](#resource-cleanup)
+  - [Common Tasks](#common-tasks)
+- [Troubleshooting](#troubleshooting)
 - [Future Enhancements](#future-enhancements)
 - [License](#license)
+
+## Quick Start Guide
+
+For those who want to get started immediately:
+
+1. **Prerequisites**: Ensure you have Docker, AWS CLI, Terraform v1.11.4+, Ansible, kubectl, Python3.13, and Git installed.
+
+2. **Start GitLab**:
+
+   ```bash
+   cd gitlab
+   cp .env.example .env
+   # Edit .env file
+   docker-compose up -d
+   cat config/initial_root_password  # Get root password
+   ```
+
+3. **Configure & Run Ansible**:
+
+   ```bash
+   cd ansible
+   cp group_vars/all.yml.example group_vars/all.yml
+   cp group_vars/vault.yml.example group_vars/vault.yml
+   # Edit both files
+   ansible-vault encrypt group_vars/vault.yml
+   python3.13 -m venv ~/.ansible-venv
+   source ~/.ansible-venv/bin/activate
+   pip install ansible python-gitlab
+   ansible-playbook -i inventory/localhost gitlab_setup.yml --ask-vault-pass
+   ```
+
+4. **Setup Terraform**:
+
+   ```bash
+   cp terraform.tfvars.example terraform.tfvars
+   cd terraform/bootstrap
+   terraform init && terraform apply
+   ```
+
+5. **Run Pipelines**: Allow infrastructure pipeline to complete before running service pipelines.
 
 ## Project Overview
 
@@ -47,119 +98,57 @@ This project implements a cloud-native movie catalog service with three microser
    - PostgreSQL database for order history
    - Asynchronous processing using RabbitMQ
 
-## CI/CD Pipeline
+## Architecture
 
-This project features a complete GitLab CI/CD setup for automated testing, building, and deployment:
+### Infrastructure Components
 
-1. **Self-hosted GitLab**
+- **Multi-Environment Design**
 
-   - Runs in Docker containers for easy setup and management
-   - Includes GitLab Runner for executing CI/CD pipelines
-   - Configured via Ansible for automated setup and maintenance
+  - **Staging**: Complete EKS cluster in its own VPC
+  - **Production**: Separate EKS cluster in its own VPC
+  - Each environment is completely isolated with identical architecture
 
-2. **Pipeline Workflows**
+- **AWS Services Used**
 
-   - **Service Pipelines**: Each microservice has its own automated build, test, scan and deployment pipeline
-   - **Infrastructure Pipeline**: Manages infrastructure changes through Terraform
-   - All environment-specific variables managed securely through GitLab CI variables
+  - **VPC**: Custom VPC spanning multiple availability zones for each environment
+  - **EKS**: Managed Kubernetes with nodes in private subnets
+  - **Load Balancing**: Application Load Balancer with HTTPS support
+  - **CloudWatch**: Comprehensive monitoring dashboards
+  - **ACM**: Certificate management for HTTPS support
+  - **S3/DynamoDB**: Terraform state management
 
-3. **Automated Deployment**
-   - Staging and Production environments configured via CI/CD
-   - Infrastructure changes tracked and applied automatically
-   - Kubernetes deployments managed through GitLab CI/CD
+- **High Availability Design**
+  - **Multi-AZ Setup**: Resources distributed across eu-north-1a and eu-north-1b
+  - **Private/Public Subnet Separation**: Enhanced security with proper gateway configuration
+  - **Autoscaling**: Horizontal Pod Autoscaling (HPA) based on CPU utilization
 
-![Service Pipeline](./images/service_pipeline.png)
 ![Infrastructure Pipeline](./images/infra_pipeline.png)
 
-## Deployment Status
+### Deployment Strategy
 
-### Kubernetes Resources
-
-The following image shows the running Kubernetes services and pods in staging and production environments:
-
-![Kubernetes Resources](./images/pods-and-ingress.png)
-
-### API Testing Results
-
-Successful API test results from Postman showing the Movie CRUD operations working against the AWS ingress endpoint:
-
-#### API test results - Staging
-
-![API Test Results - Staging](./images/staging_postman_results.png)
-
-#### API test results - Production
-
-![API Test Results - Production](./images/prod_postman_results.png)
-
-## Architecture Components
-
-### Infrastructure (AWS)
-
-- **Separate Environments**:
-  - **Staging**: Complete EKS cluster in its own VPC.
-  - **Production**: Separate EKS cluster in its own VPC.
-  - Each environment is completely isolated with identical architecture, but different resource configurations
-- **VPC**: Custom VPC spanning multiple availability zones for each environment
-- **EKS Cluster**: Managed Kubernetes with nodes in private subnets
-- **Multi-AZ Setup**: Resources distributed across eu-north-1a and eu-north-1b for high availability
-- **Load Balancing**: Application Load Balancer with HTTPS support
-- **Security**: Private/public subnet separation with proper gateway configuration
-- **Monitoring**: CloudWatch integration with comprehensive dashboard for monitoring cluster performance
-- **State Management**: Terraform state in S3 with DynamoDB locking
-- **Autoscaling**: Horizontal Pod Autoscaling (HPA) for stateless services based on CPU utilization
-
-### GitLab CI/CD Implementation
-
-- **Self-hosted GitLab**: Containerized GitLab instance for complete CI/CD control
-- **GitLab Runner**: Docker-based runner for executing pipeline jobs
-- **Multi-stage Pipelines**: Development, staging, and production environments
-- **Environment Variables**: Stored securely in GitLab's CI/CD variables
-- **Infrastructure as Code**: Terraform changes managed through CI/CD
-- **Automated Testing**: Integrated testing before deployment
-- **Deployment Automation**: Scripts for configuring kubectl and deploying to EKS
-
-### Kubernetes Deployment Strategy
-
-- **Stateless Services** (API Gateway, Inventory App):
+- **Stateless Services** (API Gateway, Inventory App)
 
   - Deployed as Kubernetes Deployments
   - Configured with Horizontal Pod Autoscaler (HPA)
   - Minimum of 1 replica, scaling up to 3 replicas based on 60% CPU utilization
-  - Topology spread constraints to ensure pods are distributed across availability zones
+  - Topology spread constraints across availability zones
 
-- **Stateful Components** (Billing App, Billing Queue, Databases):
+- **Stateful Components** (Billing App, Billing Queue, Databases)
   - Deployed as StatefulSets to preserve state and identity
   - Persistent volume claims for data retention
   - Single replica with backup strategies
 
-## Technologies
+### Key Features
 
-- **Container Orchestration**: Kubernetes via Amazon EKS
-- **Infrastructure as Code**: Terraform modules for AWS resource provisioning
-- **CI/CD**: Self-hosted GitLab with GitLab Runner
-- **Configuration Management**: Ansible for GitLab setup and management
-- **Databases**: PostgreSQL for persistent storage
-- **Messaging**: RabbitMQ for asynchronous communication
-- **API Documentation**: OpenAPI/Swagger
-- **Languages & Frameworks**: Node.js, Express
-- **Container Registry**: Docker Hub
+- **High Availability**: Multi-AZ deployment with automatic failover
+- **Scalability**: EKS auto-scaling with configurable node groups
+- **Security**: Private subnets for application pods, public-only for ingress
+- **Disaster Recovery**: AZ2 configured for disaster recovery and scaling
+- **HTTPS Support**: Integrated with AWS Certificate Manager
+- **Automated Deployment**: Complete CI/CD pipeline for code and infrastructure changes
+- **Self-hosted GitLab**: Full control over the CI/CD environment with Docker-based setup
 
-## Project Structure
-
-```
-code-keeper/
-├── ansible/                     # Ansible playbooks for GitLab setup
-├── gitlab/                      # GitLab Docker configuration
-├── images/                      # Architecture diagrams and screenshots
-├── postman/                     # API test collections
-├── src/                         # Application source code
-│   ├── api-gateway/             # API Gateway service
-│   ├── billing-app/             # Billing service
-│   └── inventory-app/           # Inventory service
-└── terraform/                   # Infrastructure as code
-```
-
-## Getting Started
+## Setup & Installation
 
 ### Prerequisites
 
@@ -171,7 +160,7 @@ code-keeper/
 - ✓ Python3.13
 - ✓ Git
 
-### Required AWS Permissions
+### AWS Permissions
 
 Before beginning the deployment, ensure your AWS user has the following IAM permissions:
 
@@ -216,7 +205,7 @@ Before beginning the deployment, ensure your AWS user has the following IAM perm
 
 You can create this policy in the AWS Management Console or see the `bootstrap/initial-user-policy.json` file for a ready-to-use policy document.
 
-### Setup Process
+### Installation Steps
 
 #### 1. Start GitLab Services
 
@@ -229,7 +218,7 @@ cp .env.example .env
 docker-compose up -d
 ```
 
-Wait for GitLab to start (this may take a few minutes). Access the GitLab UI at http://192.168.56.10 (or your configured URL). <br>
+Wait for GitLab to start (this may take a few minutes). Access the GitLab UI at http://192.168.56.10 (or your configured URL).  
 ⚠️ **Important:** Do not set the base URL as `http://localhost`. It can cause issues with container communication.
 
 Initial password can be obtained from `config` folder:
@@ -255,7 +244,7 @@ Be sure to encrypt the `vault.yml`:
 ansible-vault encrypt group_vars/vault.yml
 ```
 
-#### 3. Set Up Python virtual environment for Ansible
+#### 3. Set Up Python Virtual Environment for Ansible
 
 While in `/ansible` folder, create and activate the virtual environment:
 
@@ -277,7 +266,7 @@ Ensure your `inventory/localhost` file contains:
 localhost ansible_connection=local
 ```
 
-#### 4. Set up S3 Terraform state backend
+#### 4. Set up S3 Terraform State Backend
 
 Configure and fill `tfstate` variables for backend:
 
@@ -285,7 +274,7 @@ Configure and fill `tfstate` variables for backend:
 cp terraform.tfvars.example terraform.tfvars
 ```
 
-a. **Initialize Terraform state backend**:
+Initialize Terraform state backend:
 
 ```bash
 cd terraform/bootstrap
@@ -310,64 +299,69 @@ This will:
 - Set up webhooks and access permissions
 - Initialize repositories with code and CI/CD configuration
 
-#### 6. Use the CI/CD Pipeline to deploy everything
+#### 6. Use the CI/CD Pipeline to Deploy Everything
 
 CI/CD will automatically deploy changes when you push to the repositories.
 
-**You want to pause/cancel microservice pipelines and let the infrastructure pipeline run first to set everything up.**
+⚠️ **Important:** Pause/cancel microservice pipelines and let the infrastructure pipeline run first to set everything up.
 
-## CI/CD Pipeline Details
+## CI/CD Pipelines
 
-### Monitoring Pipelines
+### Pipeline Structure
+
+The project uses two distinct pipeline types:
+
+1. **Service Pipelines**: For each microservice (API Gateway, Inventory, Billing)
+2. **Infrastructure Pipeline**: For managing the AWS infrastructure via Terraform
+
+![Service Pipeline](./images/service_pipeline.png)
+
+### Pipeline Monitoring
 
 Go to **Projects > Your Project > Build > Pipelines** or directly access:
 
-```bash
+```
 <gitlab-host>/dashboard/projects/personal
 ```
 
-- Click on a specific pipeline icon to view its jobs and stages. Each job displays real-time logs and status updates.
+- Click on a specific pipeline icon to view its jobs and stages
+- Each job displays real-time logs and status updates
 - Manual Approval Steps:
-  - Identify jobs marked as manual and click to approve or deny.
-  - Example: The `approval-prod` and `apply-prod` jobs require manual approval and initation after the staging deployment completes.
+  - Identify jobs marked as manual and click to run the job
+  - Example: The `approval-prod` and `apply-prod` jobs require manual approval after staging deployment completes
 
-![Access Pipelines](/images/pipeline_location.png)
+![Access Pipelines](./images/pipeline_location.png)
 
-### Service Pipeline Stages (API Gateway, Inventory, Billing)
+### Service Pipelines
 
-The project uses two distinct pipeline types
+Each service pipeline includes the following stages:
 
-1. **Build**: Compiles the application code using Node.js, installs dependencies via npm, and runs a verification script to ensure all dependencies are installed correctly.
-2. **Test**: Executes the test suite for the service.
-3. **Scan**: Performs code quality analysis using tools like JShint and runs security scans (SAST) to identify potential vulnerabilities in the codebase.
-4. **Containerize**: Builds Docker container images, tags them with the commit SHA and 'latest', authenticates with Docker Hub, and pushes the images to the repository.
-5. **Deploy to Staging**: Configures kubectl to connect to the staging EKS cluster, creates necessary Kubernetes secrets from CI variables, and deploys the application with persistent volumes.
-6. **Approval**: Adds a manual approval gate that requires explicit authorization before the production deployment can proceed.
-7. **Deploy to Production**: Similar to staging deployment but targets the production EKS cluster and namespace, using production-specific environment variables and secrets.
+1. **Build**: Compiles code, installs dependencies via npm, verifies installation
+2. **Test**: Executes the test suite for the service
+3. **Scan**: Performs code quality and security analysis
+4. **Containerize**: Builds Docker images, tags them, and pushes to repository
+5. **Deploy to Staging**: Configures kubectl, creates Kubernetes secrets, deploys to staging
+6. **Approval**: Manual approval gate before proceeding to production
+7. **Deploy to Production**: Deploys to production EKS cluster using prod-specific variables
 
-### Infrastructure Pipeline Stages (Terraform)
+### Infrastructure Pipeline
 
-1. **Init**: Initializes Terraform with the proper backend configuration for state management, dynamically generates environment-specific tfvars files, and prepares the working directory.
-2. **Validate**: Performs syntax validation on Terraform files, runs `terraform fmt` to check formatting, and checks for potential hardcoded secrets in the codebase.
-3. **Plan**: Creates and displays an execution plan for the staging environment infrastructure changes, showing what resources would be created, modified, or destroyed.
-4. **Apply Staging**: Applies the approved plan to the staging environment, configures kubectl to connect to the EKS cluster, and creates necessary Kubernetes resources like namespaces and ingress.
-5. **Approval**: Implements a manual approval gate requiring explicit authorization before any changes can be applied to the production infrastructure.
-6. **Apply Production**: Plans and applies changes to the production environment, similarly configuring kubectl, setting up the production namespace, and applying ingress configurations to the production cluster.
+The infrastructure pipeline manages all AWS resources:
 
-### Repository Structure
+1. **Init**: Initializes Terraform with proper backend configuration, generates tfvars files
+2. **Validate**: Syntax validation, format checking, security best practices verification
+3. **Plan**: Creates execution plan for staging environment
+4. **Apply Staging**: Applies the plan to staging, configures kubectl, creates Kubernetes resources
+5. **Approval**: Manual approval gate for production changes
+6. **Apply Production**: Plans and applies changes to production environment
 
-Each service repository created by the Ansible playbook includes:
+## Usage & Testing
 
-- Source code for the service
-- Dockerfile for containerization
-- CI/CD configuration (.gitlab-ci.yml)
-- Kubernetes manifests for deployment
-
-## API Documentation
+### API Documentation
 
 When running, API documentation is available at `/api-docs` endpoint of the API Gateway service.
 
-## Testing with Postman
+### Postman Tests
 
 Import the collections and environment from the `postman/` directory to test the API:
 
@@ -375,40 +369,59 @@ Import the collections and environment from the `postman/` directory to test the
 2. Import `code-keeper.postman_environment.json`
 3. Update the environment variables with your deployment details
 
+### Deployment Status
+
+#### Kubernetes Resources
+
+The following image shows the running Kubernetes services and pods in staging and production environments:
+
+![Kubernetes Resources](./images/pods-and-ingress.png)
+
+#### API Testing Results
+
+Successful API test results from Postman showing the Movie CRUD operations working against the AWS ingress endpoint:
+
+**Staging Results:**
+![API Test Results - Staging](./images/staging_postman_results.png)
+
+**Production Results:**
+![API Test Results - Production](./images/prod_postman_results.png)
+
 ## Monitoring & Observability
 
 The project includes a comprehensive CloudWatch dashboard that provides visibility into cluster performance:
 
-### Staging Dashboard
-
+**Staging Dashboard:**
 ![Cloudwatch Dashboard - Staging](./images/staging_dashboard.png)
 
-### Production Dashboard
-
+**Production Dashboard:**
 ![Cloudwatch Dashboard - Production](./images/production_dashboard.png)
 
-- **Overall Cluster Metrics**: Pod and node-level CPU and memory utilization across the cluster
-- **Namespace Monitoring**: Separate metrics for default and kube-system namespaces
-- **Application Performance**: Dedicated panels tracking CPU and memory for each microservice (API Gateway, Inventory, Billing)
-- **Infrastructure Monitoring**: Specialized metrics for stateful components (databases and message queue)
-- **Resource Optimization**: Tracking of resource utilization against defined limits to optimize container configurations
-- **Container Insights**: AWS EKS addon enabled for deep visibility into container performance
+Key metrics available:
+
+- **Overall Cluster Metrics**: Pod and node-level CPU and memory utilization
+- **Namespace Monitoring**: Metrics for default and kube-system namespaces
+- **Application Performance**: CPU and memory tracking for each microservice
+- **Infrastructure Monitoring**: Metrics for databases and message queue
+- **Resource Optimization**: Resource utilization against defined limits
+- **Container Insights**: Deep visibility into container performance
 
 The dashboard provides both high-level overview panels and detailed component-specific metrics, enabling quick identification of performance bottlenecks or potential issues.
 
-## Cleanup
+## Maintenance & Operations
 
-To clean up resources:
+### Resource Cleanup
+
+To clean up all resources when you're done:
 
 1. **Remove application resources**:
-
-   Done via Infrastructure pipeline. Run `cleanup-prod` and then `cleanup-staging`. <br>Pipeline cleans up all the Kubernetes resources before using `terraform destroy`.
+   Done via Infrastructure pipeline. Run `cleanup-prod` and then `cleanup-staging`.  
+   Pipeline cleans up all Kubernetes resources before using `terraform destroy`.
 
 2. **Destroy S3 Terraform State backend**:
 
-   While in `terraform/bootstrap` directory, run:
-
    ```bash
+   cd terraform/bootstrap
    terraform destroy
    ```
 
@@ -418,15 +431,67 @@ To clean up resources:
    docker-compose down
    ```
 
-## Architecture Features
+### Common Tasks
 
-- **High Availability**: Multi-AZ deployment with automatic failover
-- **Scalability**: EKS auto-scaling with configurable node groups
-- **Security**: Private subnets for application pods, public-only for ingress
-- **Disaster Recovery**: AZ2 configured for disaster recovery and scaling
-- **HTTPS Support**: Integrated with AWS Certificate Manager using a self-signed certificate (a proper ACM certificate would be used with a registered domain name)
-- **Automated Deployment**: Complete CI/CD pipeline for code and infrastructure changes
-- **Self-hosted GitLab**: Full control over the CI/CD environment with Docker-based setup
+#### Updating Service Configuration
+
+1. Make changes to the service code in the corresponding repository
+2. Commit and push changes
+3. The CI/CD pipeline will automatically build, test, and deploy the changes
+
+#### Scaling Resources
+
+To scale the number of nodes or pods:
+
+1. Edit the appropriate terraform variables in `terraform-staging.tfvars` or `terraform-production.tfvars`
+2. Commit and push changes to the infrastructure repository
+3. The CI/CD pipeline will apply the changes
+
+## Troubleshooting
+
+### Common Issues and Solutions
+
+#### Pipeline Failures
+
+**Issue**: CI/CD pipeline fails during deployment  
+**Solution**:
+
+- Check the job logs for specific error messages
+- Verify AWS credentials are correctly configured in GitLab CI variables
+- Ensure required permissions are granted to the AWS user
+
+#### Service Connectivity Issues
+
+**Issue**: Services cannot communicate with each other  
+**Solution**:
+
+- Verify Kubernetes service names are correctly referenced in environment variables
+- Check that services are deployed in the correct namespace
+- Examine network policies to ensure traffic is allowed between services
+
+#### Database Connection Errors
+
+**Issue**: Services cannot connect to databases  
+**Solution**:
+
+- Verify database credentials are correctly set in the Kubernetes secrets
+- Check that StatefulSets are running and persistent volumes are correctly attached
+- Ensure database initialization scripts have run successfully
+
+## Project Structure
+
+```
+code-keeper/
+├── ansible/                     # Ansible playbooks for GitLab setup
+├── gitlab/                      # GitLab Docker configuration
+├── images/                      # Architecture diagrams and screenshots
+├── postman/                     # API test collections
+├── src/                         # Application source code
+│   ├── api-gateway/             # API Gateway service
+│   ├── billing-app/             # Billing service
+│   └── inventory-app/           # Inventory service
+└── terraform/                   # Infrastructure as code
+```
 
 ## Future Enhancements
 
