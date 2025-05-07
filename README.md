@@ -7,6 +7,24 @@ A cloud-native microservices architecture deployed on AWS EKS (Elastic Kubernete
 **Diagram of AWS resources for the production environment.**
 ![Architecture Diagram](./images/diagram.png)
 
+## Table of Contents
+
+- [Project Overview](#project-overview)
+- [CI/CD Pipeline](#cicd-pipeline)
+- [Deployment Status](#deployment-status)
+- [Architecture Components](#architecture-components)
+- [Technologies](#technologies)
+- [Project Structure](#project-structure)
+- [Getting Started](#getting-started)
+- [CI/CD Pipeline Details](#cicd-pipeline-details)
+- [API Documentation](#api-documentation)
+- [Testing with Postman](#testing-with-postman)
+- [Monitoring & Observability](#monitoring--observability)
+- [Cleanup](#cleanup)
+- [Architecture Features](#architecture-features)
+- [Future Enhancements](#future-enhancements)
+- [License](#license)
+
 ## Project Overview
 
 This project implements a cloud-native movie catalog service with three microservices:
@@ -145,12 +163,13 @@ code-keeper/
 
 ### Prerequisites
 
-- Docker and Docker Compose
-- AWS cli
-- Terraform v1.11.4+ (if you wish local access to IaC, just in case)
-- Ansible
-- kubectl
-- Python3.13
+- ✓ Docker and Docker Compose
+- ✓ AWS CLI
+- ✓ Terraform v1.11.4+
+- ✓ Ansible
+- ✓ kubectl
+- ✓ Python3.13
+- ✓ Git
 
 ### Required AWS Permissions
 
@@ -210,9 +229,10 @@ cp .env.example .env
 docker-compose up -d
 ```
 
-Wait for GitLab to start (this may take a few minutes). Access the GitLab UI at http://192.168.56.10 (or your configured URL). Do not set base url as `http://localhost`. It messes up Docker container communication.
+Wait for GitLab to start (this may take a few minutes). Access the GitLab UI at http://192.168.56.10 (or your configured URL). <br>
+⚠️ **Important:** Do not set the base URL as `http://localhost`. It can cause issues with container communication.
 
-Initial password can be obtained from `config` folder.
+Initial password can be obtained from `config` folder:
 
 ```bash
 cat config/initial_root_password
@@ -220,7 +240,7 @@ cat config/initial_root_password
 
 #### 2. Configure Ansible for GitLab Setup
 
-Configure your GitLab API token and other variables.
+Configure your GitLab API token and other variables:
 
 ```bash
 cd ansible
@@ -229,28 +249,28 @@ cp group_vars/vault.yml.example group_vars/vault.yml
 # Edit the .yml files to add your GitLab token and other variables
 ```
 
-Be sure to encrypt the `vault.yml`.
+Be sure to encrypt the `vault.yml`:
 
 ```bash
 ansible-vault encrypt group_vars/vault.yml
 ```
 
-#### 3. Setup a Python virtual environment to run Ansible
+#### 3. Set Up Python virtual environment for Ansible
 
-While in `/ansible` folder, create a virtual environment
+While in `/ansible` folder, create and activate the virtual environment:
 
 ```bash
 python3.13 -m venv ~/.ansible-venv
-~/.ansible_venv/bin/activate
+source ~/.ansible-venv/bin/activate
 ```
 
-Install dependencies
+Install required dependencies:
 
 ```bash
 pip install ansible python-gitlab
 ```
 
-Export the interpreter path in your playbook's `inventory/localhost`
+Ensure your `inventory/localhost` file contains:
 
 ```bash
 [local]
@@ -276,6 +296,10 @@ terraform apply
 #### 5. Run the GitLab Setup Playbook
 
 ```bash
+# Ensure the virtual environment is activated:
+source ~/.ansible-venv/bin/activate
+
+# Run the playbook:
 ansible-playbook -i inventory/localhost gitlab_setup.yml --ask-vault-pass
 ```
 
@@ -294,9 +318,24 @@ CI/CD will automatically deploy changes when you push to the repositories.
 
 ## CI/CD Pipeline Details
 
-The project uses two distinct pipeline types:
+### Monitoring Pipelines
+
+Go to **Projects > Your Project > Build > Pipelines** or directly access:
+
+```bash
+<gitlab-host>/dashboard/projects/personal
+```
+
+- Click on a specific pipeline icon to view its jobs and stages. Each job displays real-time logs and status updates.
+- Manual Approval Steps:
+  Identify jobs marked as manual and click to approve or deny.
+  Example: The `approval-prod` and `apply-prod` jobs require manual approval and initation after the staging deployment completes.
+
+![Access Pipelines](/images/pipeline_location.png)
 
 ### Service Pipeline Stages (API Gateway, Inventory, Billing)
+
+The project uses two distinct pipeline types
 
 1. **Build**: Compiles the application code using Node.js, installs dependencies via npm, and runs a verification script to ensure all dependencies are installed correctly.
 2. **Test**: Executes the test suite for the service.

@@ -12,21 +12,8 @@ stages:
   - deploy-prod
 
 variables:
-  DOCKER_REGISTRY: ${CI_REGISTRY}
-  IMAGE_NAME: api-gateway
-  CONTAINER_IMAGE: ${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}
   STAGING_KUBE_NAMESPACE: staging
   PROD_KUBE_NAMESPACE: production
-
-# Common setup that runs before Node.js jobs
-.node-setup:
-  image: node:22
-  cache:
-    key: ${CI_COMMIT_REF_SLUG}
-    paths:
-      - node_modules/
-  before_script:
-    - npm ci
 
 # Common setup for Kubernetes deployments
 .k8s-setup:
@@ -100,10 +87,6 @@ test:
   script:
     - npm run test || echo "No tests available, skipping"
   coverage: '/All files[^|]*\|[^|]*\s+([\d\.]+)/'
-  artifacts:
-    exclude:
-      - .git/
-      - .git/**/*
   needs:
     - job: build
       artifacts: true
@@ -136,38 +119,19 @@ sast:
   tags:
     - microservices
   script:
-    - echo "Setting up SAST scan environmen"
-    - rm -rf /tmp/sast-scan
+    - echo "Setting up SAST scan environment"
     - mkdir -p /tmp/sast-scan
-
-    - echo "// Test file for SAST scanning" > /tmp/sast-scan/test.js
-    - echo "function testFunc(userInput) { eval(userInput); }" >> /tmp/sast-scan/test.js
-
-    - echo "Copying JavaScript files to scan directory..."
+    - echo "Copying JavaScript files to scan directory"
     - find . -type f -name "*.js" -not -path "*/node_modules/*" -not -path "*/.git/*" -exec cp --parents {} /tmp/sast-scan/ \;
-
     - cp package*.json /tmp/sast-scan/ 2>/dev/null || true
-
-    - echo "Files to be scanned:"
-    - find /tmp/sast-scan -type f | sort
-    - NUM_FILES=$(find /tmp/sast-scan -type f | wc -l)
-    - echo "Number of files found" $NUM_FILES
-
-    - chmod -R 755 /tmp/sast-scan
-
-    - echo "Running SAST scanner..."
-    - docker run --rm --env "SECURE_LOG_LEVEL=debug" --env "SAST_EXCLUDED_PATHS=node_modules" --volume "/tmp/sast-scan:/code:ro" registry.gitlab.com/gitlab-org/security-products/sast:latest /app/bin/run /code || true
-
+    - echo "Running SAST scanner"
+    - docker run --rm --volume "/tmp/sast-scan:/code:ro" registry.gitlab.com/gitlab-org/security-products/sast:latest /app/bin/run /code || true
     - |
       if [ ! -f /tmp/sast-scan/gl-sast-report.json ]; then
-        echo "Creating minimal valid SAST report"
-        echo '{"version":"15.0.0","vulnerabilities":[],"scan":{"analyzer":{"id":"gitlab-sast","name":"GitLab SAST Scanner","vendor":{"name":"GitLab"}},"status":"success","type":"sast","start_time":"2025-05-02T00:00:00","end_time":"2025-05-02T00:00:10"}}' > /tmp/sast-scan/gl-sast-report.json
+        echo '{"version":"15.0.0","vulnerabilities":[],"scan":{"status":"success","type":"sast"}}' > gl-sast-report.json
+      else
+        cp -f /tmp/sast-scan/gl-sast-report.json ./
       fi
-
-    - cp -f /tmp/sast-scan/gl-sast-report.json ./
-    - echo "SAST scan completed. Report:"
-    - cat gl-sast-report.json | grep -o '"vulnerabilities":\[[^]]*\]' || echo "No vulnerabilities section found"
-
   artifacts:
     paths:
       - gl-sast-report.json
@@ -194,78 +158,34 @@ containerize:
     DOCKER_HOST: unix:///var/run/docker.sock
     DOCKER_TLS_CERTDIR: ""
   script:
-    - echo "Setting up Docker environment .."
+    - echo "Setting up Docker environment"
     - docker info || { echo "Docker not available"; exit 1; }
 
-    - cd dockerfiles
-
-    # Display Docker config directory
-    - echo "Docker config directory:"
-    - mkdir -p ~/.docker
-    - ls -la ~/.docker || echo "No Docker config directory found"
-
-    # Clear any existing Docker authentication configurations to avoid conflicts
-    - echo "Removing any existing Docker config..."
-    - rm -f ~/.docker/config.json || echo "No Docker config to remove"
-
-    # Clean Docker Hub credentials of whitespace
-    - echo "Processing credentials to remove whitespace..."
+    # Login to Docker Hub
+    - echo "Logging in to Docker Hub"
     - |
-      export DOCKER_HUB_USERNAME=$(echo -n "$DOCKER_HUB_USERNAME" | tr -d '\r\n\t ')
-      export DOCKER_HUB_PASSWORD=$(echo -n "$DOCKER_HUB_PASSWORD" | tr -d '\r\n\t ')
-
-    # Log in to Docker Hub with simple error handling
-    - echo "Logging in to Docker Hub..."
-    - |
-      if [ -z "$DOCKER_HUB_USERNAME" ] || [ -z "$DOCKER_HUB_PASSWORD" ]; then
-        echo "ERROR: Docker Hub credentials not found! Make sure DOCKER_HUB_USERNAME and DOCKER_HUB_PASSWORD are set in CI/CD variables."
+      if [ -z "$DOCKER_HUB_USERNAME" ] || [ -z "$DOCKER_HUB_PASSWORD" ] || [ -z "$DOCKER_HUB_REPO" ]; then
+        echo "ERROR: Docker Hub credentials or repo not found. Check CI/CD variables."
         exit 1
       fi
-
-    # Single login attempt
-    - echo "Attempting login to Docker Hub."
+    - echo "$DOCKER_HUB_PASSWORD" | docker login -u "$DOCKER_HUB_USERNAME" --password-stdin
+    # Define image names
     - |
-      echo "$DOCKER_HUB_PASSWORD" | docker login docker.io -u "$DOCKER_HUB_USERNAME" --password-stdin || {
-        echo "Docker login failed. Please verify credentials.";
-        exit 1;
-      }
-
-    # Show Docker config after login (hiding password)
-    - echo "Docker config after login:"
-    - |
-      if [ -f ~/.docker/config.json ]; then
-        cat ~/.docker/config.json | grep -v auth | grep -v "https://index.docker.io/v1/"
-      else
-        echo "No Docker config file was created after login"
-      fi
-
-    # Define image names with sanitized username for Docker tag compatibility
-    - |
-      if [ -z "$DOCKER_HUB_REPO" ]; then
-        echo "ERROR: DOCKER_HUB_REPO variable not found! Make sure it is set in CI/CD variables."
-        exit 1
-      fi
-
-      # Export the repository variables to be used in subsequent steps
       export API_GATEWAY_IMAGE="${DOCKER_HUB_REPO}/api-gateway:${CI_COMMIT_SHORT_SHA}"
       export BILLING_QUEUE_IMAGE="${DOCKER_HUB_REPO}/billing-queue:${CI_COMMIT_SHORT_SHA}"
-
       echo "Using Docker repository: $DOCKER_HUB_REPO"
-      echo "API_GATEWAY_IMAGE: $API_GATEWAY_IMAGE"
-      echo "BILLING_QUEUE_IMAGE: $BILLING_QUEUE_IMAGE"
 
-    # Build API Gateway Image
-    - echo "Building API Gateway image..."
+    # Build and push images
+    - cd dockerfiles
+    - echo "Building API Gateway image"
     - docker build -t ${API_GATEWAY_IMAGE} -f Dockerfile.api-gateway ..
     - docker tag ${API_GATEWAY_IMAGE} ${DOCKER_HUB_REPO}/api-gateway:latest
 
-    # Build Billing Queue image
-    - echo "Building Billing Queue image..."
+    - echo "Building Billing Queue image"
     - docker build -t ${BILLING_QUEUE_IMAGE} -f Dockerfile.billing-queue .
     - docker tag ${BILLING_QUEUE_IMAGE} ${DOCKER_HUB_REPO}/billing-queue:latest
 
-    # Push to Docker Hub
-    - echo "Pushing images to Docker Hub..."
+    - echo "Pushing images to Docker Hub"
     - docker push ${API_GATEWAY_IMAGE}
     - docker push ${BILLING_QUEUE_IMAGE}
     - docker push ${DOCKER_HUB_REPO}/api-gateway:latest
